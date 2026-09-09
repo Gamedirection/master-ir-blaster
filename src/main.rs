@@ -1,5 +1,6 @@
 mod store;
 mod tiqiaa;
+mod updater;
 
 use std::collections::VecDeque;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -140,6 +141,33 @@ fn device_worker(
             }
         }
     }
+}
+
+enum UpdateEvent {
+    UpToDate,
+    Installed { version: String },
+    Error(String),
+}
+
+/// Runs one check-and-install pass in a throwaway thread (checks are
+/// infrequent enough that a persistent worker isn't worth it). If a newer
+/// release is found it's downloaded and installed immediately - there's no
+/// separate "confirm" step, matching the auto-update behavior; the manual
+/// "Check for Updates" button in Settings does the exact same thing on
+/// demand.
+fn run_update_check(tx: Sender<UpdateEvent>) {
+    let result = match updater::check_for_update() {
+        Ok(None) => Ok(UpdateEvent::UpToDate),
+        Ok(Some(update)) => match updater::install_update(&update.download_url) {
+            Ok(()) => Ok(UpdateEvent::Installed {
+                version: update.version,
+            }),
+            Err(e) => Err(e),
+        },
+        Err(e) => Err(e),
+    };
+    let event = result.unwrap_or_else(|e| UpdateEvent::Error(format!("{e:#}")));
+    let _ = tx.send(event);
 }
 
 fn draw_waveform(ui: &mut egui::Ui, codes: &[i32], highlight: Option<(usize, usize)>) {
@@ -391,8 +419,11 @@ struct App {
     active_tab: Tab,
     /// Path typed into the Settings tab's "Import from file" field.
     import_path: String,
-    /// Placeholder for the not-yet-implemented auto-update checkbox.
+    /// Persisted (settings.json) - if on, checked once on startup.
     auto_update_enabled: bool,
+    update_checking: bool,
+    update_tx: Sender<UpdateEvent>,
+    update_rx: Receiver<UpdateEvent>,
     req_tx: Sender<DeviceRequest>,
     resp_rx: Receiver<DeviceResponse>,
     log_rx: Receiver<String>,
@@ -407,6 +438,13 @@ impl App {
 
         let remotes = store::load();
         let new_button_names = vec![String::new(); remotes.len()];
+
+        let settings = store::load_settings();
+        let (update_tx, update_rx) = mpsc::channel();
+        if settings.auto_update_enabled && updater::appimage_path().is_some() {
+            let tx = update_tx.clone();
+            thread::spawn(move || run_update_check(tx));
+        }
 
         Self {
             remotes,
@@ -433,7 +471,10 @@ impl App {
             multi_pass_count: 3,
             active_tab: Tab::Main,
             import_path: String::new(),
-            auto_update_enabled: false,
+            auto_update_enabled: settings.auto_update_enabled,
+            update_checking: false,
+            update_tx,
+            update_rx,
             req_tx,
             resp_rx,
             log_rx,
@@ -470,6 +511,19 @@ impl App {
     fn drain_channels(&mut self) {
         while let Ok(line) = self.log_rx.try_recv() {
             self.push_log(line);
+        }
+        while let Ok(event) = self.update_rx.try_recv() {
+            self.update_checking = false;
+            match event {
+                UpdateEvent::UpToDate => {
+                    self.status = "You're running the latest version.".to_string()
+                }
+                UpdateEvent::Installed { version } => {
+                    self.status =
+                        format!("Updated to v{version} - restart the app to complete install.")
+                }
+                UpdateEvent::Error(e) => self.status = format!("Update check failed: {e}"),
+            }
         }
         while let Ok(resp) = self.resp_rx.try_recv() {
             match resp {
@@ -622,15 +676,36 @@ impl App {
         ui.heading("Settings");
         ui.separator();
 
+        let is_appimage = updater::appimage_path().is_some();
         ui.group(|ui| {
             ui.label("Automatic updates");
-            ui.add_enabled(
-                false,
-                egui::Checkbox::new(
-                    &mut self.auto_update_enabled,
-                    "Check for updates automatically (coming soon)",
-                ),
-            );
+            if ui
+                .checkbox(&mut self.auto_update_enabled, "Check for updates on startup, and install automatically")
+                .changed()
+            {
+                let _ = store::save_settings(&store::Settings { auto_update_enabled: self.auto_update_enabled });
+            }
+            if !is_appimage {
+                ui.label(
+                    egui::RichText::new("(only takes effect in the packaged AppImage build - nothing to self-update here)")
+                        .weak(),
+                );
+            }
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(is_appimage && !self.update_checking, egui::Button::new("Check for Updates"))
+                    .on_hover_text("Checks GitHub for a newer release and installs it immediately if found")
+                    .clicked()
+                {
+                    self.update_checking = true;
+                    self.status = "Checking for updates...".to_string();
+                    let tx = self.update_tx.clone();
+                    thread::spawn(move || run_update_check(tx));
+                }
+                if self.update_checking {
+                    ui.spinner();
+                }
+            });
         });
 
         ui.add_space(8.0);
@@ -717,7 +792,11 @@ impl App {
 
             ui.add_space(18.0);
             ui.label(egui::RichText::new("Creditation").strong());
-            ui.horizontal_wrapped(|ui| {
+            // Plain (non-wrapping) horizontal group so its measured width
+            // shrinks to content - `horizontal_wrapped` claims the full
+            // available width for wrap detection, which defeats the parent
+            // `vertical_centered`'s centering.
+            ui.horizontal(|ui| {
                 ui.hyperlink_to("Facebook", "https://www.facebook.com/GameDirection");
                 ui.hyperlink_to(
                     "Instagram",
@@ -1448,7 +1527,12 @@ fn load_icon() -> egui::IconData {
 
 fn main() -> eframe::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_icon(load_icon()),
+        viewport: egui::ViewportBuilder::default()
+            .with_icon(load_icon())
+            // On Wayland/KDE the window decoration often resolves its titlebar
+            // icon by matching this app-id against an installed .desktop file
+            // rather than using the raw icon pixels directly.
+            .with_app_id("ir-blaster"),
         ..Default::default()
     };
     eframe::run_native(

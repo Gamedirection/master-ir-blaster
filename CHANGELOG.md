@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.2.0] - 2026-09-09
+
+### Added
+
+- App icon: embedded as the window/taskbar icon (via `with_app_id` so KDE/Wayland window decorations correctly resolve it against the installed desktop entry), and used for the desktop launcher shortcut.
+- Tabbed layout: **Main** (existing UI), **Settings**, and **About**.
+  - Settings: import/export configuration, and a real auto-update toggle + manual "Check for Updates" button.
+  - About: links to the changelog and license, a "Star this project on GitHub" button, "Buy Me a Coffee", and the GameDirection social/credits row.
+- Auto-update: checks GitHub Releases for a newer version. If auto-update is enabled, checks once on startup and installs automatically; a manual "Check for Updates" button does the same on demand. Installing overwrites the running AppImage in place (safe while running - the process keeps using the old file handle until it exits), so a restart is needed to actually switch to the new version. Only meaningful in the packaged AppImage build.
+- `store::import()` to re-import a previously exported configuration file (appended alongside existing remotes, nothing overwritten).
+- README: centered logo, screenshots, and an updated features/usage writeup.
+
+### Fixed
+
+- Data storage now lives in `~/.local/share/ir-blaster/` instead of next to the source tree the app happened to be built from - the old location only worked on the original dev machine and would have silently failed to persist anything for anyone running the distributed AppImage. Existing `remotes.json` from the old location is migrated automatically on first run.
+- The About tab's social-links row is now actually centered (it was claiming the full available width for wrap-detection, which defeated the parent layout's centering).
+
 ## [0.1.0] - 2026-09-08
 
 Initial release.

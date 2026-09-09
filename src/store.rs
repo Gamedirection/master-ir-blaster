@@ -21,14 +21,36 @@ pub struct Remote {
     pub buttons: Vec<Button>,
 }
 
+/// A proper user-writable directory, since the compiled binary (especially
+/// the distributed AppImage) can't rely on the source tree it was built from
+/// existing on whatever machine it's run on.
+fn data_dir() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let dir = PathBuf::from(home).join(".local/share/ir-blaster");
+    let _ = fs::create_dir_all(&dir);
+    dir
+}
+
 fn store_path() -> PathBuf {
-    // Keep the store next to the project sources regardless of the CWD the
-    // GUI was launched from.
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("remotes.json")
+    data_dir().join("remotes.json")
+}
+
+/// Older builds stored remotes.json next to the source tree at
+/// `CARGO_MANIFEST_DIR` (only correct on the original dev machine); migrate
+/// it into the real data dir on first run so existing captures aren't lost.
+fn migrate_legacy_store(new_path: &PathBuf) {
+    if new_path.exists() {
+        return;
+    }
+    let legacy = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("remotes.json");
+    if legacy.exists() {
+        let _ = fs::copy(&legacy, new_path);
+    }
 }
 
 pub fn load() -> Vec<Remote> {
     let path = store_path();
+    migrate_legacy_store(&path);
     match fs::read_to_string(&path) {
         Ok(contents) => serde_json::from_str(&contents).unwrap_or_default(),
         Err(_) => Vec::new(),
@@ -51,9 +73,31 @@ pub fn save(remotes: &[Remote]) -> Result<()> {
 }
 
 fn exports_dir() -> Result<PathBuf> {
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("exports");
+    let dir = data_dir().join("exports");
     fs::create_dir_all(&dir)?;
     Ok(dir)
+}
+
+#[derive(Serialize, Deserialize, Default)]
+pub struct Settings {
+    #[serde(default)]
+    pub auto_update_enabled: bool,
+}
+
+fn settings_path() -> PathBuf {
+    data_dir().join("settings.json")
+}
+
+pub fn load_settings() -> Settings {
+    match fs::read_to_string(settings_path()) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => Settings::default(),
+    }
+}
+
+pub fn save_settings(settings: &Settings) -> Result<()> {
+    fs::write(settings_path(), serde_json::to_string_pretty(settings)?)?;
+    Ok(())
 }
 
 fn sanitize_filename(name: &str) -> String {
