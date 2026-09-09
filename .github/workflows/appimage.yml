@@ -27,7 +27,8 @@ jobs:
             libxcb-xfixes0-dev \
             libxkbcommon-dev \
             libssl-dev \
-            fuse
+            fuse \
+            imagemagick
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -53,7 +54,10 @@ jobs:
           mkdir -p "$APPDIR/usr/share/applications"
           cp packaging/ir-blaster.desktop "$APPDIR/usr/share/applications/"
           mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
-          cp img/fc_bk.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/ir-blaster.png"
+          # linuxdeploy only accepts icons at specific standard resolutions;
+          # the source asset (250x250) isn't one of them.
+          convert img/fc_bk.png -resize 256x256 icon-256.png
+          cp icon-256.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/ir-blaster.png"
 
       - name: Download linuxdeploy and appimagetool
         run: |
@@ -75,7 +79,7 @@ jobs:
             --appdir AppDir \
             --executable AppDir/usr/bin/ir-blaster \
             --desktop-file packaging/ir-blaster.desktop \
-            --icon-file img/fc_bk.png \
+            --icon-file icon-256.png \
             --output appimage
 
       - name: Upload AppImage artifact
