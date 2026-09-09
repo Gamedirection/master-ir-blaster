@@ -347,6 +347,13 @@ struct MultiPassSession {
     testing: Option<usize>,
 }
 
+#[derive(PartialEq, Eq, Clone, Copy)]
+enum Tab {
+    Main,
+    Settings,
+    About,
+}
+
 struct App {
     remotes: Vec<Remote>,
     new_remote_name: String,
@@ -381,6 +388,11 @@ struct App {
     multi_pass: Option<MultiPassSession>,
     /// User-adjustable pass count (1-5) for the next multi-pass capture.
     multi_pass_count: u8,
+    active_tab: Tab,
+    /// Path typed into the Settings tab's "Import from file" field.
+    import_path: String,
+    /// Placeholder for the not-yet-implemented auto-update checkbox.
+    auto_update_enabled: bool,
     req_tx: Sender<DeviceRequest>,
     resp_rx: Receiver<DeviceResponse>,
     log_rx: Receiver<String>,
@@ -419,6 +431,9 @@ impl App {
             rename_buffer: String::new(),
             multi_pass: None,
             multi_pass_count: 3,
+            active_tab: Tab::Main,
+            import_path: String::new(),
+            auto_update_enabled: false,
             req_tx,
             resp_rx,
             log_rx,
@@ -602,6 +617,128 @@ impl App {
             freq_index: pair.freq_index,
         });
     }
+
+    fn render_settings(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Settings");
+        ui.separator();
+
+        ui.group(|ui| {
+            ui.label("Automatic updates");
+            ui.add_enabled(
+                false,
+                egui::Checkbox::new(
+                    &mut self.auto_update_enabled,
+                    "Check for updates automatically (coming soon)",
+                ),
+            );
+        });
+
+        ui.add_space(8.0);
+        ui.group(|ui| {
+            ui.label("Configuration");
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(!self.remotes.is_empty(), egui::Button::new("Export All"))
+                    .on_hover_text("Save every remote to a JSON file under exports/")
+                    .clicked()
+                {
+                    match store::export_all(&self.remotes) {
+                        Ok(path) => {
+                            self.status = format!("Exported all remotes to {}", path.display())
+                        }
+                        Err(e) => self.status = format!("Export failed: {e:#}"),
+                    }
+                }
+            });
+            ui.horizontal(|ui| {
+                ui.label("Import from file:");
+                ui.text_edit_singleline(&mut self.import_path);
+                if ui.button("Import").clicked() {
+                    match store::import(&self.import_path) {
+                        Ok(mut imported) => {
+                            let n = imported.len();
+                            self.remotes.append(&mut imported);
+                            self.new_button_names
+                                .resize(self.remotes.len(), String::new());
+                            let _ = store::save(&self.remotes);
+                            self.status =
+                                format!("Imported {n} remote(s) from {}.", self.import_path);
+                        }
+                        Err(e) => self.status = format!("Import failed: {e:#}"),
+                    }
+                }
+            });
+            ui.label(
+                "Imported remotes are added alongside your existing ones (nothing is overwritten).",
+            );
+        });
+    }
+
+    fn render_about(&self, ui: &mut egui::Ui) {
+        const REPO: &str = "https://github.com/Gamedirection/master-ir-blaster";
+        ui.add_space(10.0);
+        ui.vertical_centered(|ui| {
+            ui.heading("IR Blaster");
+            ui.label("by GameDirection");
+            ui.add_space(8.0);
+            ui.hyperlink_to("Changelog", format!("{REPO}/blob/main/CHANGELOG.md"));
+            ui.hyperlink_to("License (MIT)", format!("{REPO}/blob/main/LICENSE"));
+            ui.add_space(14.0);
+
+            if ui
+                .add(
+                    egui::Button::new(
+                        egui::RichText::new("\u{2b50} Star this project on GitHub").size(15.0),
+                    )
+                    .fill(egui::Color32::from_rgb(36, 41, 46))
+                    .min_size(egui::vec2(260.0, 32.0)),
+                )
+                .clicked()
+            {
+                ui.ctx().open_url(egui::OpenUrl::same_tab(REPO));
+            }
+            ui.add_space(6.0);
+            if ui
+                .add(
+                    egui::Button::new(
+                        egui::RichText::new("Buy me a coffee")
+                            .color(egui::Color32::BLACK)
+                            .size(15.0),
+                    )
+                    .fill(egui::Color32::from_rgb(255, 221, 0))
+                    .min_size(egui::vec2(260.0, 32.0)),
+                )
+                .clicked()
+            {
+                ui.ctx().open_url(egui::OpenUrl::same_tab(
+                    "https://buymeacoffee.com/gamedirection",
+                ));
+            }
+
+            ui.add_space(18.0);
+            ui.label(egui::RichText::new("Creditation").strong());
+            ui.horizontal_wrapped(|ui| {
+                ui.hyperlink_to("Facebook", "https://www.facebook.com/GameDirection");
+                ui.hyperlink_to(
+                    "Instagram",
+                    "https://www.instagram.com/gamedirection_network/",
+                );
+                ui.hyperlink_to("LinkedIn", "https://www.linkedin.com/company/91366950/");
+                ui.hyperlink_to(
+                    "YouTube",
+                    "https://www.youtube.com/channel/UCLoulV2vXP-XWWIryuggYmg?view_as=subscriber",
+                );
+                ui.hyperlink_to("X", "https://x.com/gamedirectionus");
+                ui.hyperlink_to("Bluesky", "https://bsky.app/profile/gamedirection.net");
+            });
+
+            ui.add_space(12.0);
+            ui.label(
+                egui::RichText::new("Credits: Alex Sierputowski @ GameDirection.net").italics(),
+            );
+            ui.hyperlink_to("gamedirection.net", "https://gamedirection.net");
+        });
+    }
 }
 
 impl eframe::App for App {
@@ -632,6 +769,17 @@ impl eframe::App for App {
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.selectable_value(&mut self.active_tab, Tab::Main, "Main");
+                ui.selectable_value(&mut self.active_tab, Tab::Settings, "Settings");
+                ui.selectable_value(&mut self.active_tab, Tab::About, "About");
+            });
+            ui.separator();
+
+            match self.active_tab {
+                Tab::Settings => self.render_settings(ui),
+                Tab::About => self.render_about(ui),
+                Tab::Main => {
       ui.heading("IR Blaster");
       ui.horizontal(|ui| {
         ui.label("Device: Tiqiaa TView USB IR transceiver (10c4:8468)");
@@ -1248,6 +1396,8 @@ impl eframe::App for App {
           }
         }
       });
+                }
+            }
     });
     }
 }
@@ -1283,8 +1433,24 @@ fn setup_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
+fn load_icon() -> egui::IconData {
+    let bytes = include_bytes!("../img/fc_bk.png");
+    let image = image::load_from_memory(bytes)
+        .expect("bundled icon is valid PNG")
+        .into_rgba8();
+    let (width, height) = image.dimensions();
+    egui::IconData {
+        rgba: image.into_raw(),
+        width,
+        height,
+    }
+}
+
 fn main() -> eframe::Result<()> {
-    let options = eframe::NativeOptions::default();
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_icon(load_icon()),
+        ..Default::default()
+    };
     eframe::run_native(
         "IR Blaster",
         options,

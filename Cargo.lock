@@ -1574,6 +1574,7 @@ dependencies = [
  "anyhow",
  "eframe",
  "egui",
+ "image",
  "rusb",
  "serde",
  "serde_json",

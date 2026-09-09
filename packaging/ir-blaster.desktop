@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=IR Blaster
+Comment=Record and replay IR remote signals via the Tiqiaa USB IR transceiver
+Exec=ir-blaster
+Icon=ir-blaster
+Terminal=false
+Categories=Utility;

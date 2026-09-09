@@ -35,6 +35,14 @@ pub fn load() -> Vec<Remote> {
     }
 }
 
+/// Parse a previously exported (or hand-written) JSON file of remotes.
+/// Returns an error if the file is missing or not valid JSON in this shape.
+pub fn import(path: &str) -> Result<Vec<Remote>> {
+    let contents = fs::read_to_string(path)?;
+    let remotes: Vec<Remote> = serde_json::from_str(&contents)?;
+    Ok(remotes)
+}
+
 pub fn save(remotes: &[Remote]) -> Result<()> {
     let path = store_path();
     let contents = serde_json::to_string_pretty(remotes)?;
