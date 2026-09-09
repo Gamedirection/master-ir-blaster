@@ -1,5 +1,21 @@
 # Reactive Integrations - planning doc
 
+## Status: Teams integration implemented (2026-09-09)
+
+The Teams half of this is now built - see `src/teams.rs`, `store::ReactiveSettings`,
+and the "Reactive Integrations" section of the Settings tab. It ended up using
+option 4 below (teams-for-linux's own MQTT publisher), which wasn't in the
+original options list - no Graph API/OAuth needed after all.
+
+**Confirmed status values** (from a real teams-for-linux + Mosquitto setup):
+`available`, `busy`, `do_not_disturb`, `away` (statusCodes 1-4 respectively).
+
+**Known limitation**: "Appear Offline" and "Be Right Back" were both tested
+live and teams-for-linux reports **both as `away`** - its own status
+detection doesn't distinguish them. This is a limitation of the upstream
+teams-for-linux MQTT feature, not something fixable in this app; if it adds
+finer-grained detection later, more rows can be added to the mapping UI.
+
 Goal: automatically send an IR signal (e.g. change RGB light color) in
 reaction to the user's status in a chat app, instead of requiring a manual
 button click every time. First target: **Microsoft Teams**. **Discord** is

@@ -1,5 +1,16 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- Reactive Integrations: watches Microsoft Teams presence (via teams-for-linux's local MQTT publisher, no OAuth/Azure app registration needed) and auto-fires a mapped button when status changes (available/busy/do_not_disturb/away). Toggleable and configurable in Settings; see `docs/reactive-integrations-plan.md` for the design notes and known upstream limitation (Appear Offline and Be Right Back both report as `away`).
+- Schedule tab: set up recurring times (with day-of-week selection) at which a saved button auto-fires, independent of the Teams integration.
+
+### Removed
+
+- `phone-app-report.md` (kept in git history, not needed in the working tree - its findings are summarized in the README's Protocol notes section).
+
 ## [0.2.0] - 2026-09-09
 
 ### Added
@@ -31,12 +42,12 @@ Initial release.
 ### Reliability fixes (found through extensive real-hardware testing)
 
 - Added a udev rule so the device is usable without root.
-- Fixed a libusb quirk where a near-zero timeout gets truncated to 0ms, which libusb treats as "wait forever" instead of "return immediately" — this caused the app to hang indefinitely under certain timing conditions.
+- Fixed a libusb quirk where a near-zero timeout gets truncated to 0ms, which libusb treats as "wait forever" instead of "return immediately" - this caused the app to hang indefinitely under certain timing conditions.
 - Discovered the device doesn't reliably ack every command (mode switches especially); switched those to a "fire and best-effort drain" pattern instead of a strict request/reply, matching the behavior of the community C reference driver.
-- Discovered that repeatedly re-issuing the `Output` request (polling) corrupts the device's internal state — every write after the first hangs for a flat 2s and never recovers for the rest of the session. Switched recording to a single `Output` request with one long wait instead.
+- Discovered that repeatedly re-issuing the `Output` request (polling) corrupts the device's internal state - every write after the first hangs for a flat 2s and never recovers for the rest of the session. Switched recording to a single `Output` request with one long wait instead.
 - Added a "Refresh Device" action (USB reset + full close/reopen) and automatic endpoint `clear_halt` on open, to recover a device left in a bad state by a prior ungraceful shutdown.
 - Fixed the real root cause of most "nothing happens" reports: the receiver doesn't cleanly demodulate the IR carrier, so a raw capture is mostly un-merged ~32µs carrier ripple. Added carrier-removal logic (coalescing any short burst, mark or space, into one continuous mark) so captures reflect the actual signal envelope.
-- Cross-verified the protocol implementation (USB framing, 30-entry carrier-frequency table, 16µs tick size) against the official vendor Android app's decompiled/disassembled native code — all matched byte-for-byte (see `phone-app-report.md`).
+- Cross-verified the protocol implementation (USB framing, 30-entry carrier-frequency table, 16µs tick size) against the official vendor Android app's decompiled/disassembled native code - all matched byte-for-byte (see `phone-app-report.md`).
 
 ### Features
 

@@ -132,6 +132,38 @@ pub fn save_reactive_settings(settings: &ReactiveSettings) -> Result<()> {
     Ok(())
 }
 
+/// A single "at this time, on these days, send this button" rule.
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ScheduleEntry {
+    pub enabled: bool,
+    pub hour: u32,
+    pub minute: u32,
+    /// Monday=0 .. Sunday=6 (matches chrono::Weekday::num_days_from_monday).
+    pub days: [bool; 7],
+    pub remote_name: String,
+    pub button_name: String,
+    /// ISO date (YYYY-MM-DD) this entry last fired on, so it fires at most
+    /// once per matching day even though the app checks every frame.
+    #[serde(default)]
+    pub last_fired_date: Option<String>,
+}
+
+fn schedules_path() -> PathBuf {
+    data_dir().join("schedules.json")
+}
+
+pub fn load_schedules() -> Vec<ScheduleEntry> {
+    match fs::read_to_string(schedules_path()) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => Vec::new(),
+    }
+}
+
+pub fn save_schedules(schedules: &[ScheduleEntry]) -> Result<()> {
+    fs::write(schedules_path(), serde_json::to_string_pretty(schedules)?)?;
+    Ok(())
+}
+
 fn sanitize_filename(name: &str) -> String {
     let cleaned: String = name
         .chars()

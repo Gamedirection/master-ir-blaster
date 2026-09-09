@@ -379,6 +379,7 @@ struct MultiPassSession {
 #[derive(PartialEq, Eq, Clone, Copy)]
 enum Tab {
     Main,
+    Schedule,
     Settings,
     About,
 }
@@ -429,6 +430,7 @@ struct App {
     reactive_settings: store::ReactiveSettings,
     teams_status_rx: Option<Receiver<String>>,
     last_teams_status: Option<String>,
+    schedules: Vec<store::ScheduleEntry>,
     req_tx: Sender<DeviceRequest>,
     resp_rx: Receiver<DeviceResponse>,
     log_rx: Receiver<String>,
@@ -492,6 +494,7 @@ impl App {
             reactive_settings,
             teams_status_rx,
             last_teams_status: None,
+            schedules: store::load_schedules(),
             req_tx,
             resp_rx,
             log_rx,
@@ -730,6 +733,157 @@ impl App {
                     freq_index: self.send_freq_index,
                 });
             }
+        }
+    }
+
+    /// Fires any enabled schedule entry whose time matches right now, at
+    /// most once per calendar day (tracked via `last_fired_date`).
+    fn check_schedules(&mut self) {
+        if self.busy {
+            return;
+        }
+        use chrono::{Datelike, Timelike};
+        let now = chrono::Local::now();
+        let today_str = now.date_naive().format("%Y-%m-%d").to_string();
+        let weekday_index = now.weekday().num_days_from_monday() as usize;
+        let hour = now.hour();
+        let minute = now.minute();
+
+        let due_index = self.schedules.iter().position(|s| {
+            s.enabled
+                && s.days[weekday_index]
+                && s.hour == hour
+                && s.minute == minute
+                && s.last_fired_date.as_deref() != Some(today_str.as_str())
+        });
+        let Some(i) = due_index else { return };
+
+        let entry = self.schedules[i].clone();
+        let found = self.remotes.iter().enumerate().find_map(|(r, remote)| {
+            if remote.name != entry.remote_name {
+                return None;
+            }
+            remote
+                .buttons
+                .iter()
+                .position(|b| b.name == entry.button_name)
+                .map(|b| (r, b, remote.buttons[b].codes.clone()))
+        });
+
+        self.schedules[i].last_fired_date = Some(today_str);
+        let _ = store::save_schedules(&self.schedules);
+
+        if let Some((remote_index, button_index, codes)) = found {
+            self.busy = true;
+            self.status = format!(
+                "Scheduled {hour:02}:{minute:02} -> sending \"{}\".",
+                entry.button_name
+            );
+            let _ = self.req_tx.send(DeviceRequest::Send {
+                remote_index,
+                button_index,
+                codes,
+                freq_index: self.send_freq_index,
+            });
+        }
+    }
+
+    fn render_schedule(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Schedule");
+        ui.label("Automatically send a button at specific times on specific days.");
+        ui.separator();
+
+        let options: Vec<(String, String)> = self
+            .remotes
+            .iter()
+            .flat_map(|r| {
+                r.buttons
+                    .iter()
+                    .map(move |b| (r.name.clone(), b.name.clone()))
+            })
+            .collect();
+
+        let mut delete_index: Option<usize> = None;
+        let mut changed = false;
+        const DAY_LABELS: [&str; 7] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+        for i in 0..self.schedules.len() {
+            ui.group(|ui| {
+                let entry = &mut self.schedules[i];
+                ui.horizontal(|ui| {
+                    changed |= ui.checkbox(&mut entry.enabled, "Enabled").changed();
+                    ui.label("Time:");
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut entry.hour)
+                                .range(0..=23)
+                                .suffix("h"),
+                        )
+                        .changed();
+                    changed |= ui
+                        .add(
+                            egui::DragValue::new(&mut entry.minute)
+                                .range(0..=59)
+                                .suffix("m"),
+                        )
+                        .changed();
+                    if ui.button("Delete").clicked() {
+                        delete_index = Some(i);
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Days:");
+                    for (d, label) in DAY_LABELS.iter().enumerate() {
+                        changed |= ui.checkbox(&mut entry.days[d], *label).changed();
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Button:");
+                    let current = if entry.remote_name.is_empty() {
+                        "(pick one)".to_string()
+                    } else {
+                        format!("{} / {}", entry.remote_name, entry.button_name)
+                    };
+                    egui::ComboBox::from_id_salt(("schedule_button", i))
+                        .selected_text(current)
+                        .show_ui(ui, |ui| {
+                            for (r, b) in &options {
+                                let is_selected =
+                                    entry.remote_name == *r && entry.button_name == *b;
+                                if ui
+                                    .selectable_label(is_selected, format!("{r} / {b}"))
+                                    .clicked()
+                                {
+                                    entry.remote_name = r.clone();
+                                    entry.button_name = b.clone();
+                                    changed = true;
+                                }
+                            }
+                        });
+                });
+            });
+        }
+
+        if let Some(i) = delete_index {
+            self.schedules.remove(i);
+            changed = true;
+        }
+
+        if ui.button("+ Add Schedule").clicked() {
+            self.schedules.push(store::ScheduleEntry {
+                enabled: true,
+                hour: 20,
+                minute: 0,
+                days: [true; 7],
+                remote_name: String::new(),
+                button_name: String::new(),
+                last_fired_date: None,
+            });
+            changed = true;
+        }
+
+        if changed {
+            let _ = store::save_schedules(&self.schedules);
         }
     }
 
@@ -974,6 +1128,7 @@ impl eframe::App for App {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.drain_channels();
         self.drive_sweep();
+        self.check_schedules();
         ctx.request_repaint_after(Duration::from_millis(150));
 
         egui::TopBottomPanel::bottom("log_panel")
@@ -1000,12 +1155,14 @@ impl eframe::App for App {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.selectable_value(&mut self.active_tab, Tab::Main, "Main");
+                ui.selectable_value(&mut self.active_tab, Tab::Schedule, "Schedule");
                 ui.selectable_value(&mut self.active_tab, Tab::Settings, "Settings");
                 ui.selectable_value(&mut self.active_tab, Tab::About, "About");
             });
             ui.separator();
 
             match self.active_tab {
+                Tab::Schedule => self.render_schedule(ui),
                 Tab::Settings => self.render_settings(ui),
                 Tab::About => self.render_about(ui),
                 Tab::Main => {
