@@ -100,6 +100,38 @@ pub fn save_settings(settings: &Settings) -> Result<()> {
     Ok(())
 }
 
+/// Which saved button to auto-fire for each Teams status string (e.g.
+/// "busy" -> ("RGB Controller", "Red")). Stored by name rather than index so
+/// it survives reordering/renaming of remotes and buttons - resolved to an
+/// actual button at trigger time, and simply skipped if the name no longer
+/// matches anything.
+#[derive(Serialize, Deserialize, Default, Clone)]
+pub struct ReactiveSettings {
+    #[serde(default)]
+    pub teams_enabled: bool,
+    #[serde(default)]
+    pub teams_mapping: std::collections::HashMap<String, (String, String)>,
+}
+
+fn reactive_settings_path() -> PathBuf {
+    data_dir().join("reactive_settings.json")
+}
+
+pub fn load_reactive_settings() -> ReactiveSettings {
+    match fs::read_to_string(reactive_settings_path()) {
+        Ok(s) => serde_json::from_str(&s).unwrap_or_default(),
+        Err(_) => ReactiveSettings::default(),
+    }
+}
+
+pub fn save_reactive_settings(settings: &ReactiveSettings) -> Result<()> {
+    fs::write(
+        reactive_settings_path(),
+        serde_json::to_string_pretty(settings)?,
+    )?;
+    Ok(())
+}
+
 fn sanitize_filename(name: &str) -> String {
     let cleaned: String = name
         .chars()

@@ -1,4 +1,5 @@
 mod store;
+mod teams;
 mod tiqiaa;
 mod updater;
 
@@ -424,6 +425,10 @@ struct App {
     update_checking: bool,
     update_tx: Sender<UpdateEvent>,
     update_rx: Receiver<UpdateEvent>,
+    /// Persisted (reactive_settings.json) - Teams-status-to-button mapping.
+    reactive_settings: store::ReactiveSettings,
+    teams_status_rx: Option<Receiver<String>>,
+    last_teams_status: Option<String>,
     req_tx: Sender<DeviceRequest>,
     resp_rx: Receiver<DeviceResponse>,
     log_rx: Receiver<String>,
@@ -445,6 +450,15 @@ impl App {
             let tx = update_tx.clone();
             thread::spawn(move || run_update_check(tx));
         }
+
+        let reactive_settings = store::load_reactive_settings();
+        let teams_status_rx = if reactive_settings.teams_enabled {
+            let (tx, rx) = mpsc::channel();
+            thread::spawn(move || teams::run_watcher(tx));
+            Some(rx)
+        } else {
+            None
+        };
 
         Self {
             remotes,
@@ -475,6 +489,9 @@ impl App {
             update_checking: false,
             update_tx,
             update_rx,
+            reactive_settings,
+            teams_status_rx,
+            last_teams_status: None,
             req_tx,
             resp_rx,
             log_rx,
@@ -525,6 +542,7 @@ impl App {
                 UpdateEvent::Error(e) => self.status = format!("Update check failed: {e}"),
             }
         }
+        self.drain_teams_status();
         while let Ok(resp) = self.resp_rx.try_recv() {
             match resp {
                 DeviceResponse::Recorded {
@@ -672,6 +690,49 @@ impl App {
         });
     }
 
+    /// Pulls any new Teams status off the watcher thread's channel and, if
+    /// it's actually different from the last one seen and mapped to a saved
+    /// button, fires the same Send request a manual click would.
+    fn drain_teams_status(&mut self) {
+        let Some(rx) = &self.teams_status_rx else {
+            return;
+        };
+        while let Ok(status) = rx.try_recv() {
+            if self.last_teams_status.as_deref() == Some(status.as_str()) {
+                continue;
+            }
+            self.last_teams_status = Some(status.clone());
+            if !self.reactive_settings.teams_enabled || self.busy {
+                continue;
+            }
+            let Some((remote_name, button_name)) =
+                self.reactive_settings.teams_mapping.get(&status)
+            else {
+                continue;
+            };
+            let found = self.remotes.iter().enumerate().find_map(|(r, remote)| {
+                if remote.name != *remote_name {
+                    return None;
+                }
+                remote
+                    .buttons
+                    .iter()
+                    .position(|b| b.name == *button_name)
+                    .map(|b| (r, b, remote.buttons[b].codes.clone()))
+            });
+            if let Some((remote_index, button_index, codes)) = found {
+                self.busy = true;
+                self.status = format!("Teams status \"{status}\" -> sending \"{button_name}\".");
+                let _ = self.req_tx.send(DeviceRequest::Send {
+                    remote_index,
+                    button_index,
+                    codes,
+                    freq_index: self.send_freq_index,
+                });
+            }
+        }
+    }
+
     fn render_settings(&mut self, ui: &mut egui::Ui) {
         ui.heading("Settings");
         ui.separator();
@@ -746,6 +807,95 @@ impl App {
             ui.label(
                 "Imported remotes are added alongside your existing ones (nothing is overwritten).",
             );
+        });
+
+        ui.add_space(8.0);
+        ui.group(|ui| {
+            ui.label("Reactive Integrations - Microsoft Teams");
+            ui.label(
+                egui::RichText::new(
+                    "Reads live status from teams-for-linux's MQTT publisher (127.0.0.1:1883) - \
+                     no extra login beyond your normal Teams sign-in. Requires a local MQTT broker \
+                     (e.g. Mosquitto) and teams-for-linux's config.json to have mqtt.enabled=true.",
+                )
+                .weak(),
+            );
+
+            let was_enabled = self.reactive_settings.teams_enabled;
+            if ui
+                .checkbox(&mut self.reactive_settings.teams_enabled, "Enable")
+                .changed()
+            {
+                let _ = store::save_reactive_settings(&self.reactive_settings);
+                if self.reactive_settings.teams_enabled
+                    && !was_enabled
+                    && self.teams_status_rx.is_none()
+                {
+                    let (tx, rx) = mpsc::channel();
+                    thread::spawn(move || teams::run_watcher(tx));
+                    self.teams_status_rx = Some(rx);
+                }
+            }
+
+            if let Some(status) = &self.last_teams_status {
+                ui.label(format!("Last seen status: {status}"));
+            }
+
+            const KNOWN_STATUSES: &[(&str, &str)] = &[
+                ("available", "Available"),
+                ("busy", "Busy"),
+                ("do_not_disturb", "Do Not Disturb"),
+                ("away", "Away"),
+            ];
+
+            let options: Vec<(String, String)> = self
+                .remotes
+                .iter()
+                .flat_map(|r| {
+                    r.buttons
+                        .iter()
+                        .map(move |b| (r.name.clone(), b.name.clone()))
+                })
+                .collect();
+
+            for (status_key, status_label) in KNOWN_STATUSES {
+                ui.horizontal(|ui| {
+                    ui.label(format!("{status_label}:"));
+                    let current = self
+                        .reactive_settings
+                        .teams_mapping
+                        .get(*status_key)
+                        .cloned();
+                    let selected_text = match &current {
+                        Some((r, b)) => format!("{r} / {b}"),
+                        None => "(none)".to_string(),
+                    };
+                    egui::ComboBox::from_id_salt(("teams_map", status_key))
+                        .selected_text(selected_text)
+                        .show_ui(ui, |ui| {
+                            let mut changed = false;
+                            if ui.selectable_label(current.is_none(), "(none)").clicked() {
+                                self.reactive_settings.teams_mapping.remove(*status_key);
+                                changed = true;
+                            }
+                            for (r, b) in &options {
+                                let is_selected = current.as_ref() == Some(&(r.clone(), b.clone()));
+                                if ui
+                                    .selectable_label(is_selected, format!("{r} / {b}"))
+                                    .clicked()
+                                {
+                                    self.reactive_settings
+                                        .teams_mapping
+                                        .insert((*status_key).to_string(), (r.clone(), b.clone()));
+                                    changed = true;
+                                }
+                            }
+                            if changed {
+                                let _ = store::save_reactive_settings(&self.reactive_settings);
+                            }
+                        });
+                });
+            }
         });
     }
 

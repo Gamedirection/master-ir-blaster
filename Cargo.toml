@@ -12,3 +12,4 @@ serde_json = "1"
 anyhow = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
 ureq = { version = "2", features = ["json"] }
+rumqttc = "0.24"
