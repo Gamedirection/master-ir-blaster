@@ -11,6 +11,8 @@ on:
 jobs:
   build-appimage:
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
