@@ -70,8 +70,26 @@ Phase 3 (macOS, Apple Silicon arm64) is done, with one important caveat:
   can't, the existing "missing file -> skip" fallback means macOS just
   gets no color emoji, not a crash.
 
-Phase 4 (remaining ARM64 gap-fills: Windows ARM64, macOS Intel x86_64) is
-not started yet.
+Phase 4 (Windows ARM64, macOS Intel x86_64) is done: two new matrix rows
+(`windows-11-arm` / `aarch64-pc-windows-msvc`, `macos-13` /
+`x86_64-apple-darwin`), no code or packaging-step changes needed - both
+reused every cross-platform module and CI step from Phases 2-3 unchanged,
+confirming the plan's expectation that these would be pure CI-matrix
+additions.
+
+All six planned platform/arch combinations now build successfully in CI:
+Linux x86_64 and ARM64, Windows x86_64 and ARM64, macOS Apple Silicon and
+Intel.
+
+## Remaining follow-ups
+
+- An MSI installer for Windows (currently a portable zip only - see
+  Phase 2's scope-trim note above).
+- Code signing and macOS notarization (currently shipping unsigned on
+  both platforms - a budget/priority decision for the project owner, not
+  a technical blocker).
+- Verifying the Apple Color Emoji `.ttc` question and the WinUSB
+  driver-detection message in practice, on real hardware.
 
 ## Context
 

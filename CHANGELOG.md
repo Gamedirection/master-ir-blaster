@@ -13,6 +13,7 @@
 - CI: added a Linux ARM64 build (`ubuntu-24.04-arm`) alongside the existing x86_64 AppImage build, as the first step of a wider cross-platform packaging effort (see `docs/cross-platform-packaging-plan.md`).
 - Windows x86_64 build: a portable `.exe` (zipped, no installer yet) is now built in CI. The tray icon, autostart, and single-instance lock all got cross-platform backends (native Windows tray via `tray-icon`, a registry Run-key for autostart, a loopback-TCP lock instead of a Unix socket) so the app actually works there rather than just compiling. Reactive Integrations (Teams via MQTT) has no Windows equivalent and is compiled out on that platform - see `docs/cross-platform-packaging-plan.md`. Windows also needs a one-time WinUSB driver setup step; see the README's "Windows setup" section.
 - macOS build: a `.dmg` (Apple Silicon) is now built in CI, using the same cross-platform tray/autostart backends as Windows (a LaunchAgent plist instead of a registry key). Not code-signed or notarized yet, so the first launch needs the Gatekeeper right-click-Open workaround documented in the README's "macOS setup" section.
+- CI now also builds Windows ARM64 and macOS Intel (x86_64) - all six platform/arch combinations from the cross-platform packaging plan are covered.
 
 ### Fixed
 
