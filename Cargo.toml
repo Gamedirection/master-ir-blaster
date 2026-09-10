@@ -14,3 +14,5 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 ureq = { version = "2", features = ["json"] }
 rumqttc = "0.24"
 chrono = "0.4"
+ksni = { version = "0.3.6", default-features = false, features = ["blocking", "tokio"] }
+notify-rust = "4.18.0"

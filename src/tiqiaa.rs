@@ -20,6 +20,21 @@ fn hex(buf: &[u8]) -> String {
 const VENDOR_ID: u16 = 0x10c4;
 const PRODUCT_ID: u16 = 0x8468;
 
+/// Cheap presence check (device enumeration only, no open/claim) so the tray
+/// notification watcher can poll without disturbing a handle the device
+/// worker might currently hold.
+pub fn is_present() -> bool {
+    rusb::devices()
+        .map(|list| {
+            list.iter().any(|d| {
+                d.device_descriptor()
+                    .map(|desc| desc.vendor_id() == VENDOR_ID && desc.product_id() == PRODUCT_ID)
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
 const MAX_USB_FRAG_SIZE: usize = 56;
 const MAX_PACKET_IDX: u8 = 15;
 const MAX_CMD_ID: u8 = 0x7f;

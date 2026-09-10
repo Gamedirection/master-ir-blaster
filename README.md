@@ -29,6 +29,8 @@ Point the dongle at a remote, record a button press, then replay it later to con
 - **Color-coded rows**: pick a background color per button (with automatic text contrast) to visually group them.
 - **Export / Import**: save all remotes, or just one, to a JSON file, and re-import it later.
 - **Auto-update**: checks GitHub for a newer release on startup (if enabled in Settings) and installs it automatically - just restart the app to finish. A manual "Check for Updates" button is also available. Only applies to the packaged AppImage build.
+- **Minimize to tray / start at login / run hidden**: run in the background with a system tray icon (Show/Quit), optionally launching automatically at login and starting hidden.
+- **Device-missing notifications**: an optional desktop notification if the IR transmitter isn't detected, throttled to at most once a day for passive checks (always fires right away if you actually try to record/send and it fails).
 - **Refresh Device**: force a USB reset + reopen if the dongle stops responding.
 - **Debug log panel**: every raw USB exchange, visible live, for troubleshooting.
 

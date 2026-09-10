@@ -82,6 +82,19 @@ fn exports_dir() -> Result<PathBuf> {
 pub struct Settings {
     #[serde(default)]
     pub auto_update_enabled: bool,
+    /// Hide to the system tray instead of closing when the window's close
+    /// button is clicked (the app keeps running in the background).
+    #[serde(default)]
+    pub minimize_to_tray: bool,
+    /// Whether an XDG autostart entry is installed for this app.
+    #[serde(default)]
+    pub start_at_login: bool,
+    /// Start with the main window hidden (tray-only) rather than shown.
+    #[serde(default)]
+    pub run_hidden: bool,
+    /// Desktop-notify (throttled) when the IR transmitter isn't detected.
+    #[serde(default)]
+    pub notify_device_missing: bool,
 }
 
 fn settings_path() -> PathBuf {

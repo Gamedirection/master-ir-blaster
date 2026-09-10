@@ -4,6 +4,8 @@
 
 ### Added
 
+- Settings: "Minimize to tray instead of closing", "Start at login" (installs/removes an XDG autostart entry), and "Run hidden" (start with the window hidden, tray-only), backed by a system tray icon (KDE/freedesktop StatusNotifierItem) with Show/Quit.
+- Settings: "Notify if the IR transmitter is not detected" - a desktop notification, throttled to at most once a day for passive background checks, but always firing immediately if you actually try to record/send and it fails because the device is missing.
 - Reactive Integrations: watches Microsoft Teams presence (via teams-for-linux's local MQTT publisher, no OAuth/Azure app registration needed) and auto-fires a mapped button when status changes (available/busy/do_not_disturb/away). Toggleable and configurable in Settings; see `docs/reactive-integrations-plan.md` for the design notes and known upstream limitation (Appear Offline and Be Right Back both report as `away`).
 - Schedule tab: set up recurring times (with day-of-week selection) at which a saved button auto-fires, independent of the Teams integration.
 

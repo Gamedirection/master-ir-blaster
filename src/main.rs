@@ -1,6 +1,9 @@
+mod autostart;
+mod notifier;
 mod store;
 mod teams;
 mod tiqiaa;
+mod tray;
 mod updater;
 
 use std::collections::VecDeque;
@@ -59,8 +62,18 @@ fn device_worker(
     req_rx: Receiver<DeviceRequest>,
     resp_tx: Sender<DeviceResponse>,
     log_tx: Sender<String>,
+    device_missing_throttle: notifier::Throttle,
 ) {
     let mut device: Option<TiqiaaDevice> = None;
+
+    // An actual attempted action failing because the device is gone always
+    // notifies (if the setting is on), bypassing the passive watcher's
+    // once-a-day throttle - the user is trying to use it right now.
+    let notify_if_missing = |throttle: &notifier::Throttle| {
+        if !tiqiaa::is_present() && store::load_settings().notify_device_missing {
+            notifier::notify_device_missing(throttle, true);
+        }
+    };
 
     for req in req_rx {
         if let DeviceRequest::RefreshDevice = req {
@@ -74,6 +87,7 @@ fn device_worker(
                     let _ = resp_tx.send(DeviceResponse::Refreshed);
                 }
                 Err(e) => {
+                    notify_if_missing(&device_missing_throttle);
                     let _ = resp_tx.send(DeviceResponse::Error(format!("{e:#}")));
                 }
             }
@@ -84,6 +98,7 @@ fn device_worker(
             match TiqiaaDevice::open(log_tx.clone()) {
                 Ok(d) => device = Some(d),
                 Err(e) => {
+                    notify_if_missing(&device_missing_throttle);
                     let _ = resp_tx.send(DeviceResponse::Error(format!("{e:#}")));
                     continue;
                 }
@@ -138,6 +153,7 @@ fn device_worker(
             Err(e) => {
                 // Drop the handle so the next request re-opens/re-claims the device.
                 device = None;
+                notify_if_missing(&device_missing_throttle);
                 let _ = resp_tx.send(DeviceResponse::Error(format!("{e:#}")));
             }
         }
@@ -426,6 +442,14 @@ struct App {
     update_checking: bool,
     update_tx: Sender<UpdateEvent>,
     update_rx: Receiver<UpdateEvent>,
+    /// Persisted (settings.json) - hide to tray instead of closing.
+    minimize_to_tray: bool,
+    /// Persisted (settings.json) - mirrors the XDG autostart entry.
+    start_at_login: bool,
+    /// Persisted (settings.json) - start with the window hidden.
+    run_hidden: bool,
+    /// Persisted (settings.json) - notify if the IR transmitter is missing.
+    notify_device_missing: bool,
     /// Persisted (reactive_settings.json) - Teams-status-to-button mapping.
     reactive_settings: store::ReactiveSettings,
     teams_status_rx: Option<Receiver<String>>,
@@ -437,16 +461,34 @@ struct App {
 }
 
 impl App {
-    fn new() -> Self {
+    fn new(ctx: &egui::Context) -> Self {
+        let settings = store::load_settings();
+
+        // Keep the XDG autostart entry in sync with the saved setting on
+        // every launch (idempotent, and self-heals if the file was deleted
+        // or hand-edited outside the app).
+        let _ = autostart::set_enabled(settings.start_at_login);
+
+        // Tray icon is only useful (and only spawned) if there's a saved
+        // setting that actually needs it - minimizing to it, or starting
+        // hidden and needing a way back.
+        if settings.minimize_to_tray || settings.run_hidden {
+            if let Err(e) = tray::spawn(ctx.clone(), &load_icon()) {
+                eprintln!("tray icon unavailable: {e:#}");
+            }
+        }
+
+        let device_missing_throttle = notifier::new_throttle();
+        notifier::spawn_presence_watcher(device_missing_throttle.clone());
+
         let (req_tx, req_rx) = mpsc::channel();
         let (resp_tx, resp_rx) = mpsc::channel();
         let (log_tx, log_rx) = mpsc::channel();
-        thread::spawn(move || device_worker(req_rx, resp_tx, log_tx));
+        thread::spawn(move || device_worker(req_rx, resp_tx, log_tx, device_missing_throttle));
 
         let remotes = store::load();
         let new_button_names = vec![String::new(); remotes.len()];
 
-        let settings = store::load_settings();
         let (update_tx, update_rx) = mpsc::channel();
         if settings.auto_update_enabled && updater::appimage_path().is_some() {
             let tx = update_tx.clone();
@@ -491,6 +533,10 @@ impl App {
             update_checking: false,
             update_tx,
             update_rx,
+            minimize_to_tray: settings.minimize_to_tray,
+            start_at_login: settings.start_at_login,
+            run_hidden: settings.run_hidden,
+            notify_device_missing: settings.notify_device_missing,
             reactive_settings,
             teams_status_rx,
             last_teams_status: None,
@@ -499,6 +545,18 @@ impl App {
             resp_rx,
             log_rx,
         }
+    }
+
+    /// Writes every in-memory Settings field back to settings.json - call
+    /// after changing any one of them so the others aren't lost.
+    fn save_settings(&self) {
+        let _ = store::save_settings(&store::Settings {
+            auto_update_enabled: self.auto_update_enabled,
+            minimize_to_tray: self.minimize_to_tray,
+            start_at_login: self.start_at_login,
+            run_hidden: self.run_hidden,
+            notify_device_missing: self.notify_device_missing,
+        });
     }
 
     /// Point the waveform preview at `codes`, and (re)initialize the
@@ -898,7 +956,7 @@ impl App {
                 .checkbox(&mut self.auto_update_enabled, "Check for updates on startup, and install automatically")
                 .changed()
             {
-                let _ = store::save_settings(&store::Settings { auto_update_enabled: self.auto_update_enabled });
+                self.save_settings();
             }
             if !is_appimage {
                 ui.label(
@@ -921,6 +979,54 @@ impl App {
                     ui.spinner();
                 }
             });
+        });
+
+        ui.add_space(8.0);
+        ui.group(|ui| {
+            ui.label("Startup & tray");
+            if ui
+                .checkbox(&mut self.minimize_to_tray, "Minimize to tray instead of closing")
+                .on_hover_text("Clicking the window's close button hides it to the system tray instead of quitting; use the tray icon's menu to quit for real")
+                .changed()
+            {
+                self.save_settings();
+            }
+            if ui
+                .checkbox(&mut self.start_at_login, "Start at login")
+                .on_hover_text("Adds/removes an entry in ~/.config/autostart")
+                .changed()
+            {
+                self.save_settings();
+                if let Err(e) = autostart::set_enabled(self.start_at_login) {
+                    self.status = format!("Couldn't update autostart entry: {e:#}");
+                }
+            }
+            if ui
+                .checkbox(&mut self.run_hidden, "Run hidden (start minimized to tray)")
+                .changed()
+            {
+                self.save_settings();
+            }
+            if self.minimize_to_tray || self.run_hidden {
+                ui.label(
+                    egui::RichText::new("(tray icon takes effect next launch)").weak(),
+                );
+            }
+        });
+
+        ui.add_space(8.0);
+        ui.group(|ui| {
+            ui.label("Notifications");
+            if ui
+                .checkbox(
+                    &mut self.notify_device_missing,
+                    "Notify if the IR transmitter is not detected",
+                )
+                .on_hover_text("Desktop notification, at most once a day - unless you actually try to record/send and it fails, which always notifies")
+                .changed()
+            {
+                self.save_settings();
+            }
         });
 
         ui.add_space(8.0);
@@ -1129,6 +1235,12 @@ impl eframe::App for App {
         self.drain_channels();
         self.drive_sweep();
         self.check_schedules();
+
+        if self.minimize_to_tray && ctx.input(|i| i.viewport().close_requested()) {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+        }
+
         ctx.request_repaint_after(Duration::from_millis(150));
 
         egui::TopBottomPanel::bottom("log_panel")
@@ -1833,13 +1945,18 @@ fn load_icon() -> egui::IconData {
 }
 
 fn main() -> eframe::Result<()> {
+    // Read directly rather than waiting for App::new() - the initial window
+    // visibility has to be decided before the window is even created.
+    let start_hidden = store::load_settings().run_hidden;
+
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_icon(load_icon())
             // On Wayland/KDE the window decoration often resolves its titlebar
             // icon by matching this app-id against an installed .desktop file
             // rather than using the raw icon pixels directly.
-            .with_app_id("ir-blaster"),
+            .with_app_id("ir-blaster")
+            .with_visible(!start_hidden),
         ..Default::default()
     };
     eframe::run_native(
@@ -1847,7 +1964,7 @@ fn main() -> eframe::Result<()> {
         options,
         Box::new(|cc| {
             setup_fonts(&cc.egui_ctx);
-            Ok(Box::new(App::new()))
+            Ok(Box::new(App::new(&cc.egui_ctx)))
         }),
     )
 }
