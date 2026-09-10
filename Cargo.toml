@@ -16,6 +16,7 @@ chrono = "0.4"
 notify-rust = "4.18.0"
 directories = "5"
 rfd = "0.17"
+urlencoding = "2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 ksni = { version = "0.3.6", default-features = false, features = ["blocking", "tokio"] }

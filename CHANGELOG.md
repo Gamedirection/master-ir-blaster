@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- About tab: a "Report an Issue" button. Opens a pre-filled GitHub issue in your browser with your app version, OS, whether the device is currently detected, relevant settings, and the last 30 debug log lines already filled in - nothing is sent automatically, and the app has no GitHub credentials embedded in it to post directly with.
+
 ### Fixed
 
 - Settings: Import had only a raw text field for the file path, with no way to actually browse for a file - especially bad on Windows, where typing a full path by hand isn't a normal workflow. Added a "Browse..." button (via `rfd`, a native file picker on every platform) next to it.

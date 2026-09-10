@@ -1200,6 +1200,55 @@ impl App {
         });
     }
 
+    /// Builds a GitHub "new issue" URL, pre-filled with a description
+    /// placeholder and an auto-collected diagnostic section (version, OS,
+    /// whether the device is currently detected, relevant settings, and the
+    /// last few debug log lines). Opens in the user's own browser rather
+    /// than posting anything directly - the app has no GitHub credentials
+    /// embedded in it, and shouldn't (an embedded write token in a publicly
+    /// distributed binary would be trivially extractable and abusable).
+    fn issue_report_url(&self) -> String {
+        const REPO: &str = "https://github.com/Gamedirection/master-ir-blaster";
+        const MAX_LOG_EXCERPT_LINES: usize = 30;
+
+        let device_detected = if tiqiaa::is_present() { "yes" } else { "no" };
+        let log_excerpt: String = self
+            .log
+            .iter()
+            .rev()
+            .take(MAX_LOG_EXCERPT_LINES)
+            .rev()
+            .cloned()
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let body = format!(
+            "## Description\n\n\
+             <!-- What happened? What did you expect to happen? -->\n\n\n\
+             ## Diagnostic info\n\n\
+             - App version: {version}\n\
+             - OS: {os} ({arch})\n\
+             - Device detected: {device_detected}\n\
+             - Settings: minimize_to_tray={min_tray}, run_hidden={run_hidden}, \
+             notify_device_missing={notify_missing}, auto_update_enabled={auto_update}\n\n\
+             <details>\n<summary>Recent debug log</summary>\n\n\
+             ```\n{log_excerpt}\n```\n\n</details>\n",
+            version = env!("CARGO_PKG_VERSION"),
+            os = std::env::consts::OS,
+            arch = std::env::consts::ARCH,
+            min_tray = self.minimize_to_tray,
+            run_hidden = self.run_hidden,
+            notify_missing = self.notify_device_missing,
+            auto_update = self.auto_update_enabled,
+        );
+
+        format!(
+            "{REPO}/issues/new?title={title}&labels=bug&body={body}",
+            title = urlencoding::encode("Bug report"),
+            body = urlencoding::encode(&body),
+        )
+    }
+
     fn render_about(&self, ui: &mut egui::Ui) {
         const REPO: &str = "https://github.com/Gamedirection/master-ir-blaster";
         ui.add_space(10.0);
@@ -1239,6 +1288,23 @@ impl App {
                 ui.ctx().open_url(egui::OpenUrl::same_tab(
                     "https://buymeacoffee.com/gamedirection",
                 ));
+            }
+            ui.add_space(6.0);
+            if ui
+                .add(
+                    egui::Button::new(
+                        egui::RichText::new("\u{1f41b} Report an Issue").size(15.0),
+                    )
+                    .min_size(egui::vec2(260.0, 32.0)),
+                )
+                .on_hover_text(
+                    "Opens a pre-filled GitHub issue in your browser, with your app version, OS, \
+                     device status, and recent debug log included - nothing is sent automatically.",
+                )
+                .clicked()
+            {
+                ui.ctx()
+                    .open_url(egui::OpenUrl::same_tab(self.issue_report_url()));
             }
 
             ui.add_space(18.0);
