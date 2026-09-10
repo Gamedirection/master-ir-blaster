@@ -19,6 +19,10 @@
 
 - `phone-app-report.md` (kept in git history, not needed in the working tree - its findings are summarized in the README's Protocol notes section).
 
+### Documentation
+
+- Rewrote the README in Simplified Technical English (ASD-STE100): short sentences, active voice, numbered procedures, and no em dashes or en dashes.
+
 ## [0.2.0] - 2026-09-09
 
 ### Added
