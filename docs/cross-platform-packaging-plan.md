@@ -37,7 +37,39 @@ Phase 2 (Windows x86_64) is mostly done, with one deliberate scope trim:
   leading with the driver as the likely cause rather than claiming a
   distinction that isn't actually detectable.
 
-Phases 3-4 (macOS, remaining ARM64 gap-fills) are not started yet.
+Phase 3 (macOS, Apple Silicon arm64) is done, with one important caveat:
+
+- Done: CI builds an `IR Blaster.app` bundle (Info.plist generated from
+  `packaging/macos/Info.plist` with the version substituted in, `.icns`
+  built via `iconutil` from the same 250x250 source PNG the other
+  platforms use - the largest icon sizes are upscaled from that and will
+  look soft, a known limitation of the current source art, not a
+  packaging bug) and wraps it in a `.dmg` via `hdiutil`, alongside a
+  `README-first.txt` covering the Gatekeeper workaround (also in the
+  README's "macOS setup" section).
+- Done: `src/autostart/macos.rs` (a LaunchAgent plist, loaded/unloaded
+  immediately via `launchctl bootstrap`/`bootout` so the Settings toggle
+  doesn't need a logout) and `src/tray/desktop.rs` already cover macOS via
+  the same `cfg(any(windows, macos))` gate used for Windows - see Phase 2.
+- Not verified locally, unlike Phase 2: Apple's toolchain can't be
+  cross-compiled to from Linux without a full osxcross setup (and Apple's
+  SDK has real redistribution restrictions, so that wasn't set up for
+  this). `ring` (pulled in transitively via `ureq`) fails immediately when
+  cross-compiling its C code without a macOS SDK, so not even `cargo
+  check` completes locally for this target. Everything in this phase is
+  written against the platform APIs' documented behavior and Phase 2's
+  already-proven cfg-gating pattern, but the real GitHub-hosted `macos-14`
+  CI run is the first actual test of any of it - the same position Linux
+  ARM64 (Phase 1) was in, since QEMU/cross-compilation wasn't attempted
+  there either.
+- Still unverified either way, since it needs a real Mac or Apple
+  Developer docs access to check: whether `egui`/`ab_glyph` can load a
+  face out of Apple Color Emoji's `.ttc` file for `setup_fonts()`. If it
+  can't, the existing "missing file -> skip" fallback means macOS just
+  gets no color emoji, not a crash.
+
+Phase 4 (remaining ARM64 gap-fills: Windows ARM64, macOS Intel x86_64) is
+not started yet.
 
 ## Context
 

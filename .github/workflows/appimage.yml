@@ -23,6 +23,9 @@ jobs:
           - os: windows-2022
             target: x86_64-pc-windows-msvc
             arch: x86_64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            arch: aarch64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out repository
@@ -130,6 +133,47 @@ jobs:
           name: IR-Blaster-windows-${{ matrix.arch }}-zip
           path: "IR-Blaster-windows-*.zip"
 
+      - name: Build .icns and assemble .app bundle
+        if: runner.os == 'macOS'
+        run: |
+          set -e
+          APP="IR Blaster.app"
+          mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+          cp "target/${{ matrix.target }}/release/ir-blaster" "$APP/Contents/MacOS/ir-blaster"
+
+          VERSION=$(grep '^version' Cargo.toml | head -1 | cut -d '"' -f2)
+          sed "s/__VERSION__/$VERSION/g" packaging/macos/Info.plist > "$APP/Contents/Info.plist"
+
+          # iconutil only accepts specific named sizes in an .iconset dir;
+          # the source asset (250x250) gets scaled to each (upscaled past
+          # 256px, so the largest sizes will look soft - a known limitation
+          # of the current source art, not a packaging bug).
+          mkdir -p AppIcon.iconset
+          for size in 16 32 128 256 512; do
+            convert img/fc_bk.png -resize ${size}x${size} "AppIcon.iconset/icon_${size}x${size}.png"
+            double=$((size * 2))
+            convert img/fc_bk.png -resize ${double}x${double} "AppIcon.iconset/icon_${size}x${size}@2x.png"
+          done
+          iconutil -c icns AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
+
+          mkdir -p dmg-staging
+          mv "$APP" dmg-staging/
+          cp packaging/macos/README-first.txt dmg-staging/
+
+      - name: Package .dmg
+        if: runner.os == 'macOS'
+        run: |
+          set -e
+          hdiutil create -volname "IR Blaster" -srcfolder dmg-staging -fs HFS+ \
+            -ov -format UDZO "IR-Blaster-macos-${{ matrix.arch }}.dmg"
+
+      - name: Upload macOS dmg artifact
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: IR-Blaster-macos-${{ matrix.arch }}-dmg
+          path: "IR-Blaster-macos-*.dmg"
+
   release:
     needs: build
     if: startsWith(github.ref, 'refs/tags/v')
@@ -148,3 +192,4 @@ jobs:
           files: |
             artifacts/*/IR-Blaster-*.AppImage
             artifacts/*/IR-Blaster-*.zip
+            artifacts/*/IR-Blaster-*.dmg

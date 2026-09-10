@@ -36,7 +36,7 @@ Point the dongle at a remote control. Record a button press. Replay the signal l
 
 ## Requirements
 
-- Linux (with `libusb-1.0`) or Windows 10/11. macOS support is planned but not built yet.
+- Linux (with `libusb-1.0`), Windows 10/11, or macOS 11 or later (Apple Silicon).
 - Rust (stable toolchain). You need Rust only if you build the app from source. The packaged builds need nothing but the dongle (plus, on Windows, the one-time driver step below).
 - A Tiqiaa TView-compatible USB IR transceiver (`10c4:8468`).
 
@@ -58,6 +58,12 @@ chmod +x IR-Blaster-x86_64.AppImage
 
 1. Download the latest `IR-Blaster-windows-x86_64.zip` from the [Releases page](https://github.com/Gamedirection/master-ir-blaster/releases).
 2. Extract it, then follow the one-time driver setup in the "Windows setup" section below before running `IR-Blaster.exe`.
+
+### macOS
+
+1. Download the latest `IR-Blaster-macos-aarch64.dmg` from the [Releases page](https://github.com/Gamedirection/master-ir-blaster/releases).
+2. Open the `.dmg` and drag **IR Blaster** into Applications.
+3. This build is not code-signed or notarized yet, so the first launch needs one extra step - see the "macOS setup" section below.
 
 ### Building from source (any platform)
 
@@ -97,6 +103,15 @@ Windows needs a WinUSB driver bound to the device before the app can see it - a 
 
 If the app still reports the device as not found afterward, unplug and replug the transceiver and try again.
 
+### macOS
+
+This build is not code-signed or notarized yet, so Gatekeeper blocks a normal double-click the first time. Full steps are in `packaging/macos/README-first.txt` (also included in the `.dmg`):
+
+1. Right-click (or Control-click) **IR Blaster.app** in Applications and choose Open.
+2. Click Open in the dialog that appears. You only need to do this once.
+
+Or from a terminal: `xattr -cr "/Applications/IR Blaster.app"`, then open it normally.
+
 ## Usage notes
 
 ### Recording a button
@@ -113,7 +128,7 @@ If the app still reports the device as not found afterward, unplug and replug th
 
 ## Data storage
 
-The app stores remotes, exports, and settings in the standard per-OS location: `~/.local/share/ir-blaster/` on Linux, `%APPDATA%\ir-blaster\` on Windows. Older Linux builds stored `remotes.json` next to the source tree instead. The app migrates this old file automatically the first time you run a newer build.
+The app stores remotes, exports, and settings in the standard per-OS location: `~/.local/share/ir-blaster/` on Linux, `%APPDATA%\ir-blaster\` on Windows, `~/Library/Application Support/ir-blaster/` on macOS. Older Linux builds stored `remotes.json` next to the source tree instead. The app migrates this old file automatically the first time you run a newer build.
 
 ## Protocol notes
 
