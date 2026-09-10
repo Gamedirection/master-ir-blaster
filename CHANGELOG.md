@@ -10,7 +10,8 @@
 - Schedule tab: set up recurring times (with day-of-week selection) at which a saved button auto-fires, independent of the Teams integration.
 - Settings: a "Restart Now" button next to the tray-icon settings, so "takes effect next launch" doesn't require manually closing and reopening the app.
 - Single-instance lock: launching the app while it's already running (e.g. via autostart, the desktop entry, and manually all in the same session) now just shows the existing window instead of opening a second one, which would otherwise fight over the USB device.
-- CI: added a Linux ARM64 build (`ubuntu-24.04-arm`) alongside the existing x86_64 AppImage build, as the first step of a wider cross-platform packaging effort (see `docs/cross-platform-packaging-plan.md` for the full plan: Windows and macOS, both x86_64 and ARM64, are next).
+- CI: added a Linux ARM64 build (`ubuntu-24.04-arm`) alongside the existing x86_64 AppImage build, as the first step of a wider cross-platform packaging effort (see `docs/cross-platform-packaging-plan.md`).
+- Windows x86_64 build: a portable `.exe` (zipped, no installer yet) is now built in CI. The tray icon, autostart, and single-instance lock all got cross-platform backends (native Windows tray via `tray-icon`, a registry Run-key for autostart, a loopback-TCP lock instead of a Unix socket) so the app actually works there rather than just compiling. Reactive Integrations (Teams via MQTT) has no Windows equivalent and is compiled out on that platform - see `docs/cross-platform-packaging-plan.md`. Windows also needs a one-time WinUSB driver setup step; see the README's "Windows setup" section.
 
 ### Fixed
 

@@ -2,11 +2,42 @@
 
 ## Status
 
-Phase 1 (Linux ARM64) is implemented: see `.github/workflows/appimage.yml`,
-now a matrix build (`ubuntu-22.04` x86_64 + `ubuntu-24.04-arm` aarch64)
-with a separate `release` job that attaches every matrix artifact to one
-GitHub Release on tags. Phases 2-4 (Windows, macOS, remaining ARM64
-gap-fills) are not started yet.
+Phase 1 (Linux ARM64) is done: see `.github/workflows/appimage.yml`, a
+matrix build (`ubuntu-22.04` x86_64 + `ubuntu-24.04-arm` aarch64) with a
+separate `release` job that attaches every matrix artifact to one GitHub
+Release on tags.
+
+Phase 2 (Windows x86_64) is mostly done, with one deliberate scope trim:
+
+- Done: `Cargo.toml` restructured with target-conditional dependencies
+  (`ksni`/`rumqttc` Linux-only, `tray-icon`/`winreg` Windows/macOS,
+  `rusb`'s `vendored` feature on Windows/macOS so no system libusb install
+  is needed there - confirmed by fully cross-compiling and linking a real
+  Windows .exe locally via mingw before this ever touched CI).
+- Done: `src/tray/`, `src/autostart/`, `src/single_instance.rs` (now a
+  cross-platform loopback-TCP lock, no `#[cfg]` needed), `store::data_dir()`
+  (via the `directories` crate), `setup_fonts()`, the XWayland hack, and
+  Reactive Integrations (`teams.rs`) are all cross-platform-gated per the
+  plan below.
+- Done: CI builds a Windows x86_64 release and packages it as a portable
+  zip; `packaging/windows/README-first.txt` documents the one-time WinUSB
+  driver step (also in the README's "Windows setup" section).
+- Scope trim: no MSI installer yet. `cargo-wix`'s default template installs
+  per-machine (needs admin elevation) and WiX itself can't be exercised at
+  all outside a real Windows environment, so hand-customizing it for a
+  per-user install would have been untested, unverifiable XML. Shipping the
+  already-verified portable zip now and adding the MSI as a fast-follow
+  (once there's a real Windows CI run to iterate against) was the better
+  risk trade.
+- Not done: the "distinguish not-plugged-in from no-driver-installed"
+  in-app detection originally planned turned out to not be reliably
+  possible - libusb's Windows backend can only see WinUSB-bound devices at
+  all, so a device with no driver looks identical to "not plugged in" to
+  `rusb`. The device-not-found message is Windows-specific instead,
+  leading with the driver as the likely cause rather than claiming a
+  distinction that isn't actually detectable.
+
+Phases 3-4 (macOS, remaining ARM64 gap-fills) are not started yet.
 
 ## Context
 

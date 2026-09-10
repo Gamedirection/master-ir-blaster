@@ -36,15 +36,17 @@ Point the dongle at a remote control. Record a button press. Replay the signal l
 
 ## Requirements
 
-- Linux with `libusb-1.0`.
-- Rust (stable toolchain). You need Rust only if you build the app from source. The AppImage release needs nothing but the dongle.
+- Linux (with `libusb-1.0`) or Windows 10/11. macOS support is planned but not built yet.
+- Rust (stable toolchain). You need Rust only if you build the app from source. The packaged builds need nothing but the dongle (plus, on Windows, the one-time driver step below).
 - A Tiqiaa TView-compatible USB IR transceiver (`10c4:8468`).
 
 ## Getting the app
 
+### Linux
+
 To install the packaged AppImage:
 
-1. Download the latest `IR-Blaster-x86_64.AppImage` file from the [Releases page](https://github.com/Gamedirection/master-ir-blaster/releases).
+1. Download the latest `IR-Blaster-x86_64.AppImage` file (or the `aarch64` build, on ARM64) from the [Releases page](https://github.com/Gamedirection/master-ir-blaster/releases).
 2. Mark the file executable and run it:
 
 ```sh
@@ -52,7 +54,12 @@ chmod +x IR-Blaster-x86_64.AppImage
 ./IR-Blaster-x86_64.AppImage
 ```
 
-To build the app from source instead:
+### Windows
+
+1. Download the latest `IR-Blaster-windows-x86_64.zip` from the [Releases page](https://github.com/Gamedirection/master-ir-blaster/releases).
+2. Extract it, then follow the one-time driver setup in the "Windows setup" section below before running `IR-Blaster.exe`.
+
+### Building from source (any platform)
 
 ```sh
 cargo build --release
@@ -60,6 +67,8 @@ cargo build --release
 ```
 
 ## Setup
+
+### Linux
 
 The app needs a udev rule to access the device without root permission.
 
@@ -78,6 +87,16 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger --subsystem-match=usb
 ```
 
+### Windows
+
+Windows needs a WinUSB driver bound to the device before the app can see it - a one-time step per machine, similar to the Linux udev rule above. Full steps are in `packaging/windows/README-first.txt` (also included in the downloaded zip):
+
+1. Plug in the IR transceiver.
+2. Install [Zadig](https://zadig.akeo.ie), then use it to bind the WinUSB driver to the Tiqiaa/TView device (`VID_10C4&PID_8468`) - not any other device in the list.
+3. Run `IR-Blaster.exe`.
+
+If the app still reports the device as not found afterward, unplug and replug the transceiver and try again.
+
 ## Usage notes
 
 ### Recording a button
@@ -94,7 +113,7 @@ sudo udevadm trigger --subsystem-match=usb
 
 ## Data storage
 
-The app stores remotes, exports, and settings under `~/.local/share/ir-blaster/`. Older builds stored `remotes.json` next to the source tree instead. The app migrates this old file automatically the first time you run a newer build.
+The app stores remotes, exports, and settings in the standard per-OS location: `~/.local/share/ir-blaster/` on Linux, `%APPDATA%\ir-blaster\` on Windows. Older Linux builds stored `remotes.json` next to the source tree instead. The app migrates this old file automatically the first time you run a newer build.
 
 ## Protocol notes
 

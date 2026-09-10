@@ -23,10 +23,14 @@ pub struct Remote {
 
 /// A proper user-writable directory, since the compiled binary (especially
 /// the distributed AppImage) can't rely on the source tree it was built from
-/// existing on whatever machine it's run on.
+/// existing on whatever machine it's run on. `directories` resolves the
+/// right per-OS convention: `~/.local/share/ir-blaster` on Linux (unchanged
+/// from before), `~/Library/Application Support/ir-blaster` on macOS,
+/// `%APPDATA%\ir-blaster` on Windows.
 pub fn data_dir() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    let dir = PathBuf::from(home).join(".local/share/ir-blaster");
+    let dir = directories::ProjectDirs::from("", "", "ir-blaster")
+        .map(|p| p.data_dir().to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
     let _ = fs::create_dir_all(&dir);
     dir
 }

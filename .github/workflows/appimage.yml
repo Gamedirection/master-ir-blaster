@@ -1,4 +1,4 @@
-name: Build AppImage
+name: Build
 
 on:
   push:
@@ -20,12 +20,16 @@ jobs:
           - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             arch: aarch64
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            arch: x86_64
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
       - name: Install system dependencies
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -58,6 +62,7 @@ jobs:
         run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Assemble AppDir
+        if: runner.os == 'Linux'
         run: |
           set -e
           APPDIR=AppDir
@@ -72,6 +77,7 @@ jobs:
           cp icon-256.png "$APPDIR/usr/share/icons/hicolor/256x256/apps/ir-blaster.png"
 
       - name: Download linuxdeploy and appimagetool
+        if: runner.os == 'Linux'
         run: |
           wget -q -O linuxdeploy.AppImage \
             "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${{ matrix.arch }}.AppImage"
@@ -81,6 +87,7 @@ jobs:
           chmod +x appimagetool.AppImage
 
       - name: Build AppImage
+        if: runner.os == 'Linux'
         env:
           # GitHub Actions runners have no FUSE-mounted filesystem for AppImages
           # to mount themselves from; this makes them extract-and-run instead.
@@ -95,10 +102,33 @@ jobs:
             --output appimage
 
       - name: Upload AppImage artifact
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: IR-Blaster-${{ matrix.arch }}-AppImage
           path: "IR-Blaster-*.AppImage"
+
+      # No installer yet (see docs/cross-platform-packaging-plan.md) - a
+      # portable zip is the simplest thing that's actually been verified to
+      # work (this exact build was cross-compiled and run-checked locally
+      # via mingw before ever touching CI). An MSI via cargo-wix is a
+      # follow-up once there's a real Windows CI run to validate it against.
+      - name: Package portable zip
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $dest = "IR-Blaster-windows-${{ matrix.arch }}"
+          New-Item -ItemType Directory -Path $dest | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/ir-blaster.exe" "$dest/IR-Blaster.exe"
+          Copy-Item "packaging/windows/README-first.txt" "$dest/README-first.txt"
+          Compress-Archive -Path "$dest/*" -DestinationPath "IR-Blaster-windows-${{ matrix.arch }}.zip"
+
+      - name: Upload Windows zip artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: IR-Blaster-windows-${{ matrix.arch }}-zip
+          path: "IR-Blaster-windows-*.zip"
 
   release:
     needs: build
@@ -112,7 +142,9 @@ jobs:
         with:
           path: artifacts
 
-      - name: Attach AppImages to release
+      - name: Attach build artifacts to release
         uses: softprops/action-gh-release@v2
         with:
-          files: "artifacts/*/IR-Blaster-*.AppImage"
+          files: |
+            artifacts/*/IR-Blaster-*.AppImage
+            artifacts/*/IR-Blaster-*.zip

@@ -73,7 +73,7 @@ fn to_tray_icon(rgba: &egui::IconData) -> Icon {
 /// (e.g. no StatusNotifierWatcher on this desktop, or running sandboxed) -
 /// the app works fine without it, just without a way to un-hide from the
 /// tray, so callers should log and continue rather than treat this as fatal.
-pub fn spawn(ctx: egui::Context, icon: &egui::IconData) -> Result<(), ksni::Error> {
+pub fn spawn(ctx: egui::Context, icon: &egui::IconData) -> anyhow::Result<()> {
     let tray = AppTray {
         ctx,
         icon: to_tray_icon(icon),

@@ -179,8 +179,21 @@ impl TiqiaaDevice {
         log(format!(
             "Opening device {VENDOR_ID:04x}:{PRODUCT_ID:04x}..."
         ));
-        let handle = rusb::open_device_with_vid_pid(VENDOR_ID, PRODUCT_ID)
-            .context("Tiqiaa TView device (10c4:8468) not found - is it plugged in?")?;
+        // On Windows, libusb's backend can only see devices already bound to
+        // a WinUSB-class driver - a device plugged in but still on Windows'
+        // default driver looks identical to "not plugged in" here (unlike
+        // Linux, where usbfs shows every USB device regardless of driver
+        // binding), so the two cases can't be told apart from this error
+        // alone. The WinUSB driver setup step is by far the more common
+        // cause there, so the message leads with it instead of implying a
+        // false certainty about which case this is.
+        #[cfg(target_os = "windows")]
+        const NOT_FOUND_MSG: &str = "Tiqiaa TView device (10c4:8468) not found - if it's plugged in, it likely still needs the WinUSB driver installed (see the Windows setup instructions in the README)";
+        #[cfg(not(target_os = "windows"))]
+        const NOT_FOUND_MSG: &str = "Tiqiaa TView device (10c4:8468) not found - is it plugged in?";
+
+        let handle =
+            rusb::open_device_with_vid_pid(VENDOR_ID, PRODUCT_ID).context(NOT_FOUND_MSG)?;
 
         let device = handle.device();
         let config = device.active_config_descriptor()?;

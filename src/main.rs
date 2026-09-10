@@ -1,7 +1,17 @@
+// Suppress the console window Windows would otherwise flash behind the GUI
+// in a release build; harmless everywhere else. Kept in debug builds so
+// eprintln! debug output still has somewhere to go on Windows.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod autostart;
 mod notifier;
 mod single_instance;
 mod store;
+// Reactive Integrations (Teams status -> button) reads teams-for-linux's
+// local MQTT publisher, a Linux-only Electron client feature with no
+// Windows/macOS equivalent - hidden entirely on those platforms rather than
+// shipped as a permanently-inert toggle.
+#[cfg(target_os = "linux")]
 mod teams;
 mod tiqiaa;
 mod tray;
@@ -498,6 +508,7 @@ impl App {
         }
 
         let reactive_settings = store::load_reactive_settings();
+        #[cfg(target_os = "linux")]
         let teams_status_rx = if reactive_settings.teams_enabled {
             let (tx, rx) = mpsc::channel();
             thread::spawn(move || teams::run_watcher(tx));
@@ -505,6 +516,8 @@ impl App {
         } else {
             None
         };
+        #[cfg(not(target_os = "linux"))]
+        let teams_status_rx = None;
 
         Self {
             remotes,
@@ -1083,7 +1096,13 @@ impl App {
             );
         });
 
+        // Reactive Integrations (Teams status -> button) only works via
+        // teams-for-linux's local MQTT publisher, which has no
+        // Windows/macOS equivalent - the whole section is hidden there
+        // rather than shipped as a permanently-inert toggle.
+        #[cfg(target_os = "linux")]
         ui.add_space(8.0);
+        #[cfg(target_os = "linux")]
         ui.group(|ui| {
             ui.label("Reactive Integrations - Microsoft Teams");
             ui.label(
@@ -1916,25 +1935,42 @@ impl eframe::App for App {
     }
 }
 
+#[cfg(target_os = "linux")]
+const EMOJI_FONT_CANDIDATES: &[(&str, &str)] = &[
+    (
+        "noto_color_emoji",
+        "/usr/share/fonts/noto/NotoColorEmoji.ttf",
+    ),
+    (
+        "noto_sans_symbols2",
+        "/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf",
+    ),
+];
+
+#[cfg(target_os = "windows")]
+const EMOJI_FONT_CANDIDATES: &[(&str, &str)] = &[
+    ("segoe_ui_emoji", r"C:\Windows\Fonts\seguiemj.ttf"),
+    ("segoe_ui_symbol", r"C:\Windows\Fonts\seguisym.ttf"),
+];
+
+// Apple Color Emoji is a .ttc (TrueType Collection); egui's font loader may
+// or may not support pulling a face out of one (unverified - if it can't,
+// this just silently contributes no emoji font, same as any other missing
+// path below, not a crash).
+#[cfg(target_os = "macos")]
+const EMOJI_FONT_CANDIDATES: &[(&str, &str)] =
+    &[("apple_color_emoji", "/System/Library/Fonts/Apple Color Emoji.ttc")];
+
 /// egui's own default fonts have no emoji/symbol coverage, so any emoji typed
 /// into a button/remote name (or used in our own labels) would render as a
 /// blank box. Layer in whatever emoji-capable fonts this system actually has
 /// - egui's rasterizer only handles traditional vector outline glyphs, not
 /// colored bitmap/COLR fonts, so a monochrome symbols font is included as a
-/// fallback for anything the color font can't display.
+/// fallback for anything the color font can't display. Any candidate that
+/// isn't found on this machine is silently skipped, not an error.
 fn setup_fonts(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
-    let candidates: &[(&str, &str)] = &[
-        (
-            "noto_color_emoji",
-            "/usr/share/fonts/noto/NotoColorEmoji.ttf",
-        ),
-        (
-            "noto_sans_symbols2",
-            "/usr/share/fonts/noto/NotoSansSymbols2-Regular.ttf",
-        ),
-    ];
-    for (name, path) in candidates {
+    for (name, path) in EMOJI_FONT_CANDIDATES {
         if let Ok(bytes) = std::fs::read(path) {
             fonts
                 .font_data
@@ -1965,15 +2001,18 @@ fn main() -> eframe::Result<()> {
     // is already running, having told it to show its window instead.
     let single_instance_listener = single_instance::acquire_or_exit();
 
-    // Force XWayland. On winit/KWin, native-Wayland viewport commands are
-    // unreliable: `ViewportCommand::Visible(false)` silently does nothing,
-    // so "minimize to tray" could only minimize (still leaving a taskbar
-    // entry) instead of truly hiding. XWayland's older X11 window-state
-    // protocol handles hide/restore correctly - verified with the same
-    // approach in ../perixx-rgb-control - and as a side effect, a genuinely
-    // unmapped X11 window also has no taskbar entry, which is the "tray
-    // only, not in the taskbar" behavior this is actually going for.
+    // Force XWayland (Linux/Wayland only - meaningless elsewhere, since
+    // WAYLAND_DISPLAY never exists on Windows/macOS anyway). On winit/KWin,
+    // native-Wayland viewport commands are unreliable:
+    // `ViewportCommand::Visible(false)` silently does nothing, so "minimize
+    // to tray" could only minimize (still leaving a taskbar entry) instead
+    // of truly hiding. XWayland's older X11 window-state protocol handles
+    // hide/restore correctly - verified with the same approach in
+    // ../perixx-rgb-control - and as a side effect, a genuinely unmapped X11
+    // window also has no taskbar entry, which is the "tray only, not in the
+    // taskbar" behavior this is actually going for.
     // SAFETY: single-threaded at this point, before any other code reads env vars.
+    #[cfg(target_os = "linux")]
     unsafe {
         std::env::remove_var("WAYLAND_DISPLAY");
     }
