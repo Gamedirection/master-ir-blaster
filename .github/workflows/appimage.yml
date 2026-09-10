@@ -9,10 +9,18 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-appimage:
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: write
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            arch: x86_64
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            arch: aarch64
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -34,6 +42,8 @@ jobs:
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
 
       - name: Cache cargo registry and build output
         uses: actions/cache@v4
@@ -42,17 +52,17 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          key: ${{ matrix.target }}-cargo-${{ hashFiles('Cargo.lock') }}
 
       - name: Build release binary
-        run: cargo build --release --locked
+        run: cargo build --release --locked --target ${{ matrix.target }}
 
       - name: Assemble AppDir
         run: |
           set -e
           APPDIR=AppDir
           mkdir -p "$APPDIR/usr/bin"
-          cp target/release/ir-blaster "$APPDIR/usr/bin/"
+          cp "target/${{ matrix.target }}/release/ir-blaster" "$APPDIR/usr/bin/"
           mkdir -p "$APPDIR/usr/share/applications"
           cp packaging/ir-blaster.desktop "$APPDIR/usr/share/applications/"
           mkdir -p "$APPDIR/usr/share/icons/hicolor/256x256/apps"
@@ -63,21 +73,21 @@ jobs:
 
       - name: Download linuxdeploy and appimagetool
         run: |
-          wget -q -O linuxdeploy-x86_64.AppImage \
-            https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          chmod +x linuxdeploy-x86_64.AppImage
-          wget -q -O appimagetool-x86_64.AppImage \
-            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
-          chmod +x appimagetool-x86_64.AppImage
+          wget -q -O linuxdeploy.AppImage \
+            "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-${{ matrix.arch }}.AppImage"
+          chmod +x linuxdeploy.AppImage
+          wget -q -O appimagetool.AppImage \
+            "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.arch }}.AppImage"
+          chmod +x appimagetool.AppImage
 
       - name: Build AppImage
         env:
           # GitHub Actions runners have no FUSE-mounted filesystem for AppImages
           # to mount themselves from; this makes them extract-and-run instead.
           APPIMAGE_EXTRACT_AND_RUN: "1"
-          OUTPUT: IR-Blaster-x86_64.AppImage
+          OUTPUT: IR-Blaster-${{ matrix.arch }}.AppImage
         run: |
-          ./linuxdeploy-x86_64.AppImage \
+          ./linuxdeploy.AppImage \
             --appdir AppDir \
             --executable AppDir/usr/bin/ir-blaster \
             --desktop-file packaging/ir-blaster.desktop \
@@ -87,11 +97,22 @@ jobs:
       - name: Upload AppImage artifact
         uses: actions/upload-artifact@v4
         with:
-          name: IR-Blaster-AppImage
+          name: IR-Blaster-${{ matrix.arch }}-AppImage
           path: "IR-Blaster-*.AppImage"
 
-      - name: Attach AppImage to release
-        if: startsWith(github.ref, 'refs/tags/v')
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Attach AppImages to release
         uses: softprops/action-gh-release@v2
         with:
-          files: "IR-Blaster-*.AppImage"
+          files: "artifacts/*/IR-Blaster-*.AppImage"
