@@ -46,7 +46,9 @@ Phase 3 (macOS, Apple Silicon arm64) is done, with one important caveat:
   look soft, a known limitation of the current source art, not a
   packaging bug) and wraps it in a `.dmg` via `hdiutil`, alongside a
   `README-first.txt` covering the Gatekeeper workaround (also in the
-  README's "macOS setup" section).
+  README's "macOS setup" section). Resizing for the `.iconset` uses `sips`
+  (built into macOS) - the first real CI run caught that ImageMagick,
+  unlike on the Linux/Windows runners, isn't actually preinstalled here.
 - Done: `src/autostart/macos.rs` (a LaunchAgent plist, loaded/unloaded
   immediately via `launchctl bootstrap`/`bootout` so the Settings toggle
   doesn't need a logout) and `src/tray/desktop.rs` already cover macOS via

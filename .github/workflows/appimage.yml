@@ -147,12 +147,14 @@ jobs:
           # iconutil only accepts specific named sizes in an .iconset dir;
           # the source asset (250x250) gets scaled to each (upscaled past
           # 256px, so the largest sizes will look soft - a known limitation
-          # of the current source art, not a packaging bug).
+          # of the current source art, not a packaging bug). Using sips
+          # (built into macOS) instead of ImageMagick, which isn't
+          # preinstalled on the GitHub-hosted macOS runner.
           mkdir -p AppIcon.iconset
           for size in 16 32 128 256 512; do
-            convert img/fc_bk.png -resize ${size}x${size} "AppIcon.iconset/icon_${size}x${size}.png"
+            sips -z $size $size img/fc_bk.png --out "AppIcon.iconset/icon_${size}x${size}.png" > /dev/null
             double=$((size * 2))
-            convert img/fc_bk.png -resize ${double}x${double} "AppIcon.iconset/icon_${size}x${size}@2x.png"
+            sips -z $double $double img/fc_bk.png --out "AppIcon.iconset/icon_${size}x${size}@2x.png" > /dev/null
           done
           iconutil -c icns AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
 
