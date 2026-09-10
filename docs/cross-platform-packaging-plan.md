@@ -70,16 +70,27 @@ Phase 3 (macOS, Apple Silicon arm64) is done, with one important caveat:
   can't, the existing "missing file -> skip" fallback means macOS just
   gets no color emoji, not a crash.
 
-Phase 4 (Windows ARM64, macOS Intel x86_64) is done: two new matrix rows
-(`windows-11-arm` / `aarch64-pc-windows-msvc`, `macos-13` /
-`x86_64-apple-darwin`), no code or packaging-step changes needed - both
-reused every cross-platform module and CI step from Phases 2-3 unchanged,
-confirming the plan's expectation that these would be pure CI-matrix
-additions.
+Phase 4 (Windows ARM64, macOS Intel x86_64) is done, with one structural
+change found necessary along the way. `windows-11-arm` worked immediately,
+confirming the plan's expectation that this would be a pure CI-matrix
+addition. `macos-13`, though, sat queued for 35+ minutes with no sign of
+starting - GitHub is actively deprecating that runner pool in favor of
+Apple Silicon, and it apparently has little to no spare capacity left. Since
+`release`'s `needs: build` waits for every leg of the matrix job to reach a
+terminal state, a `macos-13` leg stuck queued indefinitely would have
+blocked release-artifact uploads for every other platform too, forever.
 
-All six planned platform/arch combinations now build successfully in CI:
-Linux x86_64 and ARM64, Windows x86_64 and ARM64, macOS Apple Silicon and
-Intel.
+Fix: `macos-13` was pulled out of the main matrix into its own standalone
+`build-macos-intel` job (`continue-on-error: true`, not listed in
+`release`'s `needs:`), with a copy of the macOS build/packaging steps. It
+runs independently and, on a tag push, attaches its own dmg to the release
+whenever it finishes - best-effort, without gating or being gated by
+anything else. `windows-11-arm` and both `macos-14` legs stayed in the main
+matrix since they have no such capacity problem.
+
+All six planned platform/arch combinations build successfully in CI: Linux
+x86_64 and ARM64, Windows x86_64 and ARM64, macOS Apple Silicon (in the
+main matrix) and Intel (standalone, best-effort per above).
 
 ## Remaining follow-ups
 
