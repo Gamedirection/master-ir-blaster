@@ -8,10 +8,12 @@
 - Settings: "Notify if the IR transmitter is not detected" - a desktop notification, throttled to at most once a day for passive background checks, but always firing immediately if you actually try to record/send and it fails because the device is missing.
 - Reactive Integrations: watches Microsoft Teams presence (via teams-for-linux's local MQTT publisher, no OAuth/Azure app registration needed) and auto-fires a mapped button when status changes (available/busy/do_not_disturb/away). Toggleable and configurable in Settings; see `docs/reactive-integrations-plan.md` for the design notes and known upstream limitation (Appear Offline and Be Right Back both report as `away`).
 - Schedule tab: set up recurring times (with day-of-week selection) at which a saved button auto-fires, independent of the Teams integration.
+- Settings: a "Restart Now" button next to the tray-icon settings, so "takes effect next launch" doesn't require manually closing and reopening the app.
+- Single-instance lock: launching the app while it's already running (e.g. via autostart, the desktop entry, and manually all in the same session) now just shows the existing window instead of opening a second one, which would otherwise fight over the USB device.
 
 ### Fixed
 
-- "Minimize to tray" didn't actually hide the window on Wayland - `winit`'s Wayland backend makes `Window::set_visible()` a documented no-op, so the close button appeared to do nothing. Switched to minimizing the window instead (which Wayland does support); the tray's "Show" still requests focus but restoring from a minimized state isn't guaranteed on Wayland (a winit/compositor limitation, not something this app can force) - the taskbar entry always works as a fallback.
+- "Minimize to tray" didn't actually hide the window on Wayland - `winit`'s Wayland backend makes `Window::set_visible()` a documented no-op, so the close button appeared to do nothing. Fixed by forcing XWayland at startup (same approach as `perixx-rgb-control`): XWayland's X11 window-state protocol handles hide/restore correctly, and as a side effect an unmapped X11 window also has no taskbar entry - confirmed working (hides fully, no taskbar entry, restores via the tray's Show).
 
 ### Removed
 

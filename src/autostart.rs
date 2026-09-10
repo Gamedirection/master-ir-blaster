@@ -13,26 +13,13 @@ fn desktop_path() -> PathBuf {
     autostart_dir().join("ir-blaster.desktop")
 }
 
-/// Prefer the running AppImage's own path (so autostart survives it being
-/// replaced by a self-update) and fall back to the current executable for
-/// dev builds / non-AppImage installs.
-fn exec_path() -> String {
-    crate::updater::appimage_path()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| {
-            std::env::current_exe()
-                .map(|p| p.display().to_string())
-                .unwrap_or_else(|_| "ir-blaster".to_string())
-        })
-}
-
 /// Creates or removes `~/.config/autostart/ir-blaster.desktop`. Safe to call
 /// repeatedly with the same value (idempotent), so callers can use it to
 /// keep the file in sync with the saved setting on every launch.
 pub fn set_enabled(enabled: bool) -> Result<()> {
     if enabled {
         fs::create_dir_all(autostart_dir())?;
-        let exec = exec_path();
+        let exec = crate::updater::exec_path().display().to_string();
         let contents = format!(
             "[Desktop Entry]\n\
              Type=Application\n\

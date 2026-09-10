@@ -24,7 +24,7 @@ pub struct Remote {
 /// A proper user-writable directory, since the compiled binary (especially
 /// the distributed AppImage) can't rely on the source tree it was built from
 /// existing on whatever machine it's run on.
-fn data_dir() -> PathBuf {
+pub fn data_dir() -> PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     let dir = PathBuf::from(home).join(".local/share/ir-blaster");
     let _ = fs::create_dir_all(&dir);

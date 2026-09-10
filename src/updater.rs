@@ -34,6 +34,16 @@ pub fn appimage_path() -> Option<PathBuf> {
     std::env::var_os("APPIMAGE").map(PathBuf::from)
 }
 
+/// Path to relaunch the app with: the running AppImage if we are one (so a
+/// restart picks up a just-installed self-update, and autostart survives the
+/// AppImage being replaced), falling back to the current executable for dev
+/// builds / non-AppImage installs.
+pub fn exec_path() -> PathBuf {
+    appimage_path().unwrap_or_else(|| {
+        std::env::current_exe().unwrap_or_else(|_| PathBuf::from("ir-blaster"))
+    })
+}
+
 /// Checks GitHub's latest release against our own compiled-in version.
 /// Returns `Ok(None)` if already up to date.
 pub fn check_for_update() -> Result<Option<AvailableUpdate>> {

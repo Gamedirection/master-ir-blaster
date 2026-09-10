@@ -1,5 +1,6 @@
 mod autostart;
 mod notifier;
+mod single_instance;
 mod store;
 mod teams;
 mod tiqiaa;
@@ -7,6 +8,7 @@ mod tray;
 mod updater;
 
 use std::collections::VecDeque;
+use std::process;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -986,7 +988,7 @@ impl App {
             ui.label("Startup & tray");
             if ui
                 .checkbox(&mut self.minimize_to_tray, "Minimize to tray instead of closing")
-                .on_hover_text("Clicking the window's close button minimizes it instead of quitting (on Wayland, this can only minimize, not fully hide - a Wayland/winit limitation); use the tray icon's menu to quit for real")
+                .on_hover_text("Clicking the window's close button hides it to the system tray instead of quitting; use the tray icon's menu to quit for real")
                 .changed()
             {
                 self.save_settings();
@@ -1008,9 +1010,21 @@ impl App {
                 self.save_settings();
             }
             if self.minimize_to_tray || self.run_hidden {
-                ui.label(
-                    egui::RichText::new("(tray icon takes effect next launch)").weak(),
-                );
+                ui.horizontal(|ui| {
+                    ui.label(
+                        egui::RichText::new("(tray icon takes effect next launch)").weak(),
+                    );
+                    if ui
+                        .button("Restart Now")
+                        .on_hover_text("Relaunch the app immediately so this takes effect")
+                        .clicked()
+                    {
+                        match process::Command::new(updater::exec_path()).spawn() {
+                            Ok(_) => ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close),
+                            Err(e) => self.status = format!("Restart failed: {e:#}"),
+                        }
+                    }
+                });
             }
         });
 
@@ -1238,12 +1252,9 @@ impl eframe::App for App {
 
         if self.minimize_to_tray && ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            // `Visible(false)` is a documented no-op on Wayland (winit can't hide
-            // a window there), so minimize instead - that's actually supported.
-            // Downside: winit/Wayland also can't force-unminimize, so the tray's
-            // "Show" can request focus but isn't guaranteed to restore it; the
-            // taskbar entry always will.
-            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
+            // Actually hides (not just minimizes) and drops the taskbar entry -
+            // relies on main() forcing XWayland, see the comment there.
+            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
         }
 
         ctx.request_repaint_after(Duration::from_millis(150));
@@ -1950,6 +1961,23 @@ fn load_icon() -> egui::IconData {
 }
 
 fn main() -> eframe::Result<()> {
+    // Exits immediately (before any window is created) if another instance
+    // is already running, having told it to show its window instead.
+    let single_instance_listener = single_instance::acquire_or_exit();
+
+    // Force XWayland. On winit/KWin, native-Wayland viewport commands are
+    // unreliable: `ViewportCommand::Visible(false)` silently does nothing,
+    // so "minimize to tray" could only minimize (still leaving a taskbar
+    // entry) instead of truly hiding. XWayland's older X11 window-state
+    // protocol handles hide/restore correctly - verified with the same
+    // approach in ../perixx-rgb-control - and as a side effect, a genuinely
+    // unmapped X11 window also has no taskbar entry, which is the "tray
+    // only, not in the taskbar" behavior this is actually going for.
+    // SAFETY: single-threaded at this point, before any other code reads env vars.
+    unsafe {
+        std::env::remove_var("WAYLAND_DISPLAY");
+    }
+
     // Read directly rather than waiting for App::new() - the initial window
     // visibility has to be decided before the window is even created.
     let start_hidden = store::load_settings().run_hidden;
@@ -1967,8 +1995,11 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "IR Blaster",
         options,
-        Box::new(|cc| {
+        Box::new(move |cc| {
             setup_fonts(&cc.egui_ctx);
+            if let Some(listener) = single_instance_listener {
+                single_instance::spawn_listener(listener, cc.egui_ctx.clone());
+            }
             Ok(Box::new(App::new(&cc.egui_ctx)))
         }),
     )

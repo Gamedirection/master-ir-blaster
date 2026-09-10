@@ -7,11 +7,10 @@ struct AppTray {
     icon: Icon,
 }
 
-fn show_window(ctx: &egui::Context) {
+pub fn show_window(ctx: &egui::Context) {
     ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
-    // Un-minimizing isn't actually possible on Wayland (winit just logs a
-    // warning and ignores it there) - harmless to try, and it's what
-    // actually restores the window on X11.
+    // Also un-minimize, in case the user minimized it normally rather than
+    // via the tray (harmless either way).
     ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
     ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
     ctx.request_repaint();
