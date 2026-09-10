@@ -1076,6 +1076,14 @@ impl App {
             ui.horizontal(|ui| {
                 ui.label("Import from file:");
                 ui.text_edit_singleline(&mut self.import_path);
+                if ui.button("Browse...").clicked() {
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("JSON", &["json"])
+                        .pick_file()
+                    {
+                        self.import_path = path.display().to_string();
+                    }
+                }
                 if ui.button("Import").clicked() {
                     match store::import(&self.import_path) {
                         Ok(mut imported) => {

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings: Import had only a raw text field for the file path, with no way to actually browse for a file - especially bad on Windows, where typing a full path by hand isn't a normal workflow. Added a "Browse..." button (via `rfd`, a native file picker on every platform) next to it.
+
 ## [0.3.0] - 2026-09-10
 
 ### Added
