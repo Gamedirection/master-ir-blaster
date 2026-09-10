@@ -986,7 +986,7 @@ impl App {
             ui.label("Startup & tray");
             if ui
                 .checkbox(&mut self.minimize_to_tray, "Minimize to tray instead of closing")
-                .on_hover_text("Clicking the window's close button hides it to the system tray instead of quitting; use the tray icon's menu to quit for real")
+                .on_hover_text("Clicking the window's close button minimizes it instead of quitting (on Wayland, this can only minimize, not fully hide - a Wayland/winit limitation); use the tray icon's menu to quit for real")
                 .changed()
             {
                 self.save_settings();
@@ -1238,7 +1238,12 @@ impl eframe::App for App {
 
         if self.minimize_to_tray && ctx.input(|i| i.viewport().close_requested()) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+            // `Visible(false)` is a documented no-op on Wayland (winit can't hide
+            // a window there), so minimize instead - that's actually supported.
+            // Downside: winit/Wayland also can't force-unminimize, so the tray's
+            // "Show" can request focus but isn't guaranteed to restore it; the
+            // taskbar entry always will.
+            ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(true));
         }
 
         ctx.request_repaint_after(Duration::from_millis(150));

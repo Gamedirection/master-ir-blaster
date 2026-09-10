@@ -9,6 +9,10 @@
 - Reactive Integrations: watches Microsoft Teams presence (via teams-for-linux's local MQTT publisher, no OAuth/Azure app registration needed) and auto-fires a mapped button when status changes (available/busy/do_not_disturb/away). Toggleable and configurable in Settings; see `docs/reactive-integrations-plan.md` for the design notes and known upstream limitation (Appear Offline and Be Right Back both report as `away`).
 - Schedule tab: set up recurring times (with day-of-week selection) at which a saved button auto-fires, independent of the Teams integration.
 
+### Fixed
+
+- "Minimize to tray" didn't actually hide the window on Wayland - `winit`'s Wayland backend makes `Window::set_visible()` a documented no-op, so the close button appeared to do nothing. Switched to minimizing the window instead (which Wayland does support); the tray's "Show" still requests focus but restoring from a minimized state isn't guaranteed on Wayland (a winit/compositor limitation, not something this app can force) - the taskbar entry always works as a fallback.
+
 ### Removed
 
 - `phone-app-report.md` (kept in git history, not needed in the working tree - its findings are summarized in the README's Protocol notes section).
